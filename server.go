@@ -26,6 +26,21 @@ var stateMachine StateMachine = StateMachine{
 	tree: NewTree(),
 }
 
+func processConnect(ctx *Context, req *connectRequest) *connectResponse {
+	stateMachine.mutex.Lock()
+	stateMachine.zxid++
+	ctx.zxid = stateMachine.zxid
+	defer stateMachine.mutex.Unlock()
+
+	resp := &connectResponse{ // TODO: set these like ZooKeeper does
+		ProtocolVersion: 12,
+		TimeOut:         8790,
+		SessionID:       325,
+		Passwd:          []byte("wtf"),
+	}
+	return resp
+}
+
 func processRequest(ctx *Context, req interface{}) (interface{}, ErrCode) {
 	stateMachine.mutex.Lock()
 	stateMachine.zxid++
@@ -170,7 +185,9 @@ func handleRequest(conn net.Conn) error {
 		Err: errOk,
 	}
 	log.Printf("Processing request %#v", req)
-	resp, errCode := processRequest(&Context{time: time.Now().Unix()}, req)
+	resp, errCode := processRequest(&Context{
+		time: time.Now().Unix(),
+	}, req)
 	if len(more) > 0 {
 		log.Printf("unexpected bytes after reading %v request: %v", name, more)
 	}
@@ -215,13 +232,9 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 	log.Printf("connection request: %#v", req)
-
-	resp := &connectResponse{ // TODO: set these like ZooKeeper does
-		ProtocolVersion: 12,
-		TimeOut:         8790,
-		SessionID:       325,
-		Passwd:          []byte("wtf"),
-	}
+	resp := processConnect(&Context{
+		time: time.Now().Unix(),
+	}, req)
 	var supplement interface{}
 	if sendReadOnlyByte {
 		supplement = &struct {
