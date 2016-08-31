@@ -6,6 +6,7 @@
 package main
 
 import (
+	cryptoRand "crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -16,69 +17,87 @@ import (
 	"time"
 )
 
-type StateMachine struct {
-	mutex sync.Mutex
-	zxid  int64
-	tree  *Tree
+type Consensus struct {
+	mutex        sync.Mutex
+	zxid         ZXID
+	stateMachine *StateMachine
 }
 
-var stateMachine StateMachine = StateMachine{
-	tree: NewTree(),
+var consensus = Consensus{
+	stateMachine: NewStateMachine(),
 }
 
-func processConnect(ctx *Context, req *connectRequest) *connectResponse {
-	stateMachine.mutex.Lock()
-	stateMachine.zxid++
-	ctx.zxid = stateMachine.zxid
-	defer stateMachine.mutex.Unlock()
-
-	resp := &connectResponse{ // TODO: set these like ZooKeeper does
-		ProtocolVersion: 12,
-		TimeOut:         8790,
-		SessionID:       325,
-		Passwd:          []byte("wtf"),
+func getContext() *Context {
+	consensus.zxid++
+	ctx := &Context{
+		zxid: consensus.zxid,
+		time: time.Now().Unix(),
 	}
-	return resp
+	ctx.rand = make([]byte, SessionPasswordLen)
+	_, err := cryptoRand.Read(ctx.rand)
+	if err != nil {
+		log.Fatalf("Could not get random bytes: %v", err)
+	}
+	return ctx
 }
 
-func processRequest(ctx *Context, req interface{}) (interface{}, ErrCode) {
-	stateMachine.mutex.Lock()
-	stateMachine.zxid++
-	ctx.zxid = stateMachine.zxid
-	defer stateMachine.mutex.Unlock()
+func processConnect(conn *Connection, req *connectRequest) (*connectResponse, ErrCode) {
+	consensus.mutex.Lock()
+	defer consensus.mutex.Unlock()
+	resp := &connectResponse{
+		ProtocolVersion: 12, // TODO: set this like ZooKeeper does
+		TimeOut:         req.TimeOut,
+	}
+	if req.SessionID == 0 {
+		resp.SessionID, resp.Passwd = consensus.stateMachine.createSession(getContext())
+	} else {
+		resp.SessionID = req.SessionID
+		resp.Passwd = req.Passwd
+	}
+	err := consensus.stateMachine.setConn(resp.SessionID, resp.Passwd, conn)
+	if err != errOk {
+		return nil, err
+	}
+	return resp, errOk
+}
+
+func processRequest(req interface{}) (interface{}, ErrCode) {
+	consensus.mutex.Lock()
+	defer consensus.mutex.Unlock()
+	ctx := getContext()
 
 	switch req := req.(type) {
 
 	case *CreateRequest:
-		tree, resp, errCode := stateMachine.tree.Create(ctx, req)
+		tree, resp, errCode := consensus.stateMachine.tree.Create(ctx, req)
 		if errCode != errOk {
 			return nil, errCode
 		}
-		stateMachine.tree = tree
+		consensus.stateMachine.tree = tree
 		return resp, errOk
 
 	case *getChildren2Request:
-		tree, resp, errCode := stateMachine.tree.GetChildren(ctx, req)
+		tree, resp, errCode := consensus.stateMachine.tree.GetChildren(ctx, req)
 		if errCode != errOk {
 			return nil, errCode
 		}
-		stateMachine.tree = tree
+		consensus.stateMachine.tree = tree
 		return resp, errOk
 
 	case *getDataRequest:
-		tree, resp, errCode := stateMachine.tree.GetData(ctx, req)
+		tree, resp, errCode := consensus.stateMachine.tree.GetData(ctx, req)
 		if errCode != errOk {
 			return nil, errCode
 		}
-		stateMachine.tree = tree
+		consensus.stateMachine.tree = tree
 		return resp, errOk
 
 	case *SetDataRequest:
-		tree, resp, errCode := stateMachine.tree.SetData(ctx, req)
+		tree, resp, errCode := consensus.stateMachine.tree.SetData(ctx, req)
 		if errCode != errOk {
 			return nil, errCode
 		}
-		stateMachine.tree = tree
+		consensus.stateMachine.tree = tree
 		return resp, errOk
 
 	default:
@@ -185,9 +204,7 @@ func handleRequest(conn net.Conn) error {
 		Err: errOk,
 	}
 	log.Printf("Processing request %#v", req)
-	resp, errCode := processRequest(&Context{
-		time: time.Now().Unix(),
-	}, req)
+	resp, errCode := processRequest(req)
 	if len(more) > 0 {
 		log.Printf("unexpected bytes after reading %v request: %v", name, more)
 	}
@@ -232,9 +249,12 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 	log.Printf("connection request: %#v", req)
-	resp := processConnect(&Context{
-		time: time.Now().Unix(),
-	}, req)
+	resp, errCode := processConnect(&Connection{conn}, req)
+	if errCode != errOk {
+		// TODO: what am I supposed to do with this?
+		log.Printf("Can't satisfy connection request (%v), dropping", errCode.toError())
+		return
+	}
 	var supplement interface{}
 	if sendReadOnlyByte {
 		supplement = &struct {

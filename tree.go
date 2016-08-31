@@ -10,11 +10,6 @@ import (
 	"strings"
 )
 
-type Context struct {
-	zxid int64
-	time int64
-}
-
 type Tree struct {
 	data     []byte
 	acl      []ACL

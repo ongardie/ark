@@ -47,6 +47,11 @@ import (
 // Diego added this
 type Path string
 type Component string
+type ZXID int64
+type SessionId int64
+type SessionPassword []byte // 16 bytes
+
+const SessionPasswordLen = 16
 
 // end
 
@@ -69,8 +74,8 @@ type ACL struct {
 }
 
 type Stat struct {
-	Czxid          int64 // The zxid of the change that caused this znode to be created.
-	Mzxid          int64 // The zxid of the change that last modified this znode.
+	Czxid          ZXID  // The zxid of the change that caused this znode to be created.
+	Mzxid          ZXID  // The zxid of the change that last modified this znode.
 	Ctime          int64 // The time in milliseconds from epoch when this znode was created.
 	Mtime          int64 // The time in milliseconds from epoch when this znode was last modified.
 	Version        int32 // The number of changes to the data of this znode.
@@ -79,7 +84,7 @@ type Stat struct {
 	EphemeralOwner int64 // The session id of the owner of this znode if the znode is an ephemeral node. If it is not an ephemeral node, it will be zero.
 	DataLength     int32 // The length of the data field of this znode.
 	NumChildren    int32 // The number of children of this znode.
-	Pzxid          int64 // last modified children
+	Pzxid          ZXID  // last modified children
 }
 
 // ServerClient is the information for a single Zookeeper client and its session.
@@ -88,9 +93,9 @@ type ServerClient struct {
 	Queued        int64
 	Received      int64
 	Sent          int64
-	SessionID     int64
-	Lcxid         int64
-	Lzxid         int64
+	SessionID     SessionId
+	Lcxid         ZXID
+	Lzxid         ZXID
 	Timeout       int32
 	LastLatency   int32
 	MinLatency    int32
@@ -187,15 +192,15 @@ type connectRequest struct {
 	ProtocolVersion int32
 	LastZxidSeen    int64
 	TimeOut         int32
-	SessionID       int64
-	Passwd          []byte
+	SessionID       SessionId
+	Passwd          SessionPassword
 }
 
 type connectResponse struct {
 	ProtocolVersion int32
 	TimeOut         int32
-	SessionID       int64
-	Passwd          []byte
+	SessionID       SessionId
+	Passwd          SessionPassword
 }
 
 type CreateRequest struct {
