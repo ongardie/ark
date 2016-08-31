@@ -54,13 +54,13 @@ func (old *Tree) withChild(name Component, child *Tree) *Tree {
 }
 
 // TODO: req.Flags
-func (t *Tree) Create(ctx *Context, req *CreateRequest) (*Tree, *createResponse, error) {
-	var do func(node *Tree, components []Component) (*Tree, error)
-	do = func(node *Tree, components []Component) (*Tree, error) {
+func (t *Tree) Create(ctx *Context, req *CreateRequest) (*Tree, *createResponse, ErrCode) {
+	var do func(node *Tree, components []Component) (*Tree, ErrCode)
+	do = func(node *Tree, components []Component) (*Tree, ErrCode) {
 		if len(components) == 1 {
 			_, ok := node.children[components[0]]
 			if ok {
-				return nil, ErrNodeExists
+				return nil, errNodeExists
 			}
 			return node.withChild(components[0], &Tree{
 				data: req.Data,
@@ -69,31 +69,31 @@ func (t *Tree) Create(ctx *Context, req *CreateRequest) (*Tree, *createResponse,
 					Czxid: ctx.zxid,
 					Ctime: ctx.time,
 				},
-			}), nil
+			}), errOk
 		} else {
 			child, ok := node.children[components[0]]
 			if !ok {
-				return nil, ErrNoNode
+				return nil, errNoNode
 			}
 			newChild, err := do(child, components[1:])
-			if err != nil {
+			if err != errOk {
 				return nil, err
 			}
-			return node.withChild(components[0], newChild), nil
+			return node.withChild(components[0], newChild), errOk
 		}
 	}
 
 	components := splitPath(req.Path)
 	if len(components) == 0 {
-		return nil, nil, ErrNodeExists
+		return nil, nil, errNodeExists
 	}
 	root, err := do(t, components)
-	if err != nil {
-		return nil, nil, err
+	if err != errOk {
+		return nil, nil, errOk
 	}
 	return root, &createResponse{
 		Path: req.Path,
-	}, nil
+	}, errOk
 }
 
 type ComponentSortable []Component
@@ -103,10 +103,10 @@ func (p ComponentSortable) Less(i, j int) bool { return p[i] < p[j] }
 func (p ComponentSortable) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
 // TODO: req.Watch
-func (t *Tree) GetChildren(ctx *Context, req *getChildren2Request) (*Tree, *getChildren2Response, error) {
+func (t *Tree) GetChildren(ctx *Context, req *getChildren2Request) (*Tree, *getChildren2Response, ErrCode) {
 	resp := &getChildren2Response{}
-	var do func(node *Tree, components []Component) error
-	do = func(node *Tree, components []Component) error {
+	var do func(node *Tree, components []Component) ErrCode
+	do = func(node *Tree, components []Component) ErrCode {
 		if len(components) == 0 {
 			resp.Children = make([]Component, 0, len(node.children))
 			for name := range node.children {
@@ -114,54 +114,54 @@ func (t *Tree) GetChildren(ctx *Context, req *getChildren2Request) (*Tree, *getC
 			}
 			sort.Sort(ComponentSortable(resp.Children))
 			resp.Stat = node.stat
-			return nil
+			return errOk
 		} else {
 			child, ok := node.children[components[0]]
 			if !ok {
-				return ErrNoNode
+				return errNoNode
 			}
 			return do(child, components[1:])
 		}
 	}
 	err := do(t, splitPath(req.Path))
-	if err != nil {
-		return t, nil, err
+	if err != errOk {
+		return nil, nil, err
 	}
-	return t, resp, nil
+	return t, resp, errOk
 }
 
 // TODO: Watch
-func (t *Tree) GetData(ctx *Context, req *getDataRequest) (*Tree, *getDataResponse, error) {
+func (t *Tree) GetData(ctx *Context, req *getDataRequest) (*Tree, *getDataResponse, ErrCode) {
 	resp := &getDataResponse{}
-	var do func(node *Tree, components []Component) error
-	do = func(node *Tree, components []Component) error {
+	var do func(node *Tree, components []Component) ErrCode
+	do = func(node *Tree, components []Component) ErrCode {
 		if len(components) == 0 {
 			resp.Data = node.data
 			resp.Stat = node.stat
-			return nil
+			return errOk
 		} else {
 			child, ok := node.children[components[0]]
 			if !ok {
-				return ErrNoNode
+				return errNoNode
 			}
 			return do(child, components[1:])
 		}
 	}
 	err := do(t, splitPath(req.Path))
-	if err != nil {
-		return t, nil, err
+	if err != errOk {
+		return nil, nil, err
 	}
-	return t, resp, nil
+	return t, resp, errOk
 }
 
 // TODO: Version
-func (t *Tree) SetData(ctx *Context, req *SetDataRequest) (*Tree, *setDataResponse, error) {
+func (t *Tree) SetData(ctx *Context, req *SetDataRequest) (*Tree, *setDataResponse, ErrCode) {
 	resp := &setDataResponse{}
-	var do func(node *Tree, components []Component) (*Tree, error)
-	do = func(node *Tree, components []Component) (*Tree, error) {
+	var do func(node *Tree, components []Component) (*Tree, ErrCode)
+	do = func(node *Tree, components []Component) (*Tree, ErrCode) {
 		if len(components) == 0 {
 			if req.Version >= 0 && node.stat.Version != req.Version {
-				return nil, ErrBadVersion
+				return nil, errBadVersion
 			}
 			node = node.shallowClone()
 			node.data = req.Data
@@ -169,22 +169,22 @@ func (t *Tree) SetData(ctx *Context, req *SetDataRequest) (*Tree, *setDataRespon
 			node.stat.Mtime = ctx.time
 			node.stat.Version += 1 // TODO: overflow?
 			resp.Stat = node.stat
-			return node, nil
+			return node, errOk
 		} else {
 			child, ok := node.children[components[0]]
 			if !ok {
-				return nil, ErrNoNode
+				return nil, errNoNode
 			}
 			newChild, err := do(child, components[1:])
-			if err != nil {
+			if err != errOk {
 				return nil, err
 			}
-			return node.withChild(components[0], newChild), nil
+			return node.withChild(components[0], newChild), errOk
 		}
 	}
 	root, err := do(t, splitPath(req.Path))
-	if err != nil {
+	if err != errOk {
 		return nil, nil, err
 	}
-	return root, resp, nil
+	return root, resp, errOk
 }
