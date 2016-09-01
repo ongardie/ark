@@ -9,13 +9,28 @@ import (
 	cryptoRand "crypto/rand"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/hashicorp/raft"
+	"github.com/hashicorp/raft-boltdb"
 )
 
 type Connection interface {
 	Notify(zxid ZXID, event TreeEvent)
+}
+
+type Server struct {
+	raft struct {
+		settings    *raft.Config
+		stableStore raft.StableStore
+		logStore    raft.LogStore
+		snapStore   raft.SnapshotStore
+		transport   raft.Transport
+		handle      *raft.Raft
+	}
 }
 
 type Consensus struct {
@@ -43,7 +58,7 @@ func getContext(sessionId SessionId) *Context {
 	return ctx
 }
 
-func processConnect(rpc *ConnectRPC) {
+func (s *Server) processConnect(rpc *ConnectRPC) {
 	resp := &connectResponse{
 		ProtocolVersion: 12, // TODO: set this like ZooKeeper does
 		TimeOut:         rpc.req.TimeOut,
@@ -62,13 +77,13 @@ func processConnect(rpc *ConnectRPC) {
 	rpc.reply(resp)
 }
 
-func handler(rpcChan <-chan RPC) {
+func (s *Server) handler(rpcChan <-chan RPC) {
 	for {
 		rpc := <-rpcChan
 		consensus.mutex.Lock()
 		switch rpc := rpc.(type) {
 		case *ConnectRPC:
-			processConnect(rpc)
+			s.processConnect(rpc)
 
 		case *PingRPC:
 			log.Printf("Sending pong")
@@ -114,7 +129,62 @@ func handler(rpcChan <-chan RPC) {
 	}
 }
 
-func serve() error {
+func (s *Server) startRaft() error {
+	s.raft.settings = raft.DefaultConfig()
+	s.raft.settings.LocalID = "server0"
+
+	store, err := raftboltdb.NewBoltStore("store.bolt")
+	if err != nil {
+		return fmt.Errorf("Unable to initialize bolt store %v\n", err)
+	}
+	s.raft.stableStore = store
+	s.raft.logStore = store
+
+	s.raft.snapStore, err = raft.NewFileSnapshotStoreWithLogger("snapshot", 1, nil)
+	if err != nil {
+		return fmt.Errorf("Unable to initialize snapshot store %v\n", err)
+	}
+
+	configuration := raft.Configuration{
+		Servers: []raft.Server{
+			raft.Server{
+				Suffrage: raft.Voter,
+				ID:       s.raft.settings.LocalID,
+				Address:  "127.0.0.1:2180",
+			},
+		},
+	}
+
+	err = raft.BootstrapCluster(s.raft.settings,
+		s.raft.logStore, s.raft.stableStore, s.raft.snapStore,
+		configuration)
+	if err != nil {
+		return fmt.Errorf("Unable to bootstrap Raft server: %v\n", err)
+	}
+
+	s.raft.transport, err = raft.NewTCPTransportWithLogger(
+		"127.0.0.1:2180",
+		&net.TCPAddr{
+			IP:   []byte{127, 0, 0, 1},
+			Port: 2180,
+		},
+		4, time.Second, nil)
+	if err != nil {
+		return fmt.Errorf("Unable to start Raft transport: %v\n", err)
+	}
+
+	var stateMachine raft.FSM // TODO
+
+	s.raft.handle, err = raft.NewRaft(s.raft.settings, stateMachine,
+		s.raft.logStore, s.raft.stableStore, s.raft.snapStore, s.raft.transport)
+	if err != nil {
+		return fmt.Errorf("Unable to start Raft server: %v\n", err)
+	}
+
+	return nil
+}
+
+func (s *Server) serve() error {
 	rpcChan := make(chan RPC)
 
 	log.Print("listening for ZooKeeper clients on port 2181")
@@ -125,15 +195,22 @@ func serve() error {
 	}
 
 	for i := 0; i < 32; i++ {
-		go handler(rpcChan)
+		go s.handler(rpcChan)
 	}
 	select {} // block forever
 }
 
 func main() {
-	err := serve()
+	s := &Server{}
+	err := s.startRaft()
 	if err != nil {
-		log.Printf("error: %v", err)
+		log.Printf("error starting Raft: %v", err)
+		os.Exit(1)
+	}
+
+	err = s.serve()
+	if err != nil {
+		log.Printf("error serving clients: %v", err)
 		os.Exit(1)
 	}
 }
