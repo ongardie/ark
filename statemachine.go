@@ -8,7 +8,6 @@ package main
 import (
 	"bytes"
 	"log"
-	"net"
 )
 
 type StateMachine struct {
@@ -28,7 +27,6 @@ type Context struct {
 type SessionIds []SessionId
 type Connection struct {
 	sessionId SessionId
-	netConn   net.Conn
 }
 
 type TreeEvent struct {
@@ -124,34 +122,45 @@ func (sm *StateMachine) addWatch(event TreeEvent, sessionId SessionId) {
 	}
 }
 
-func (sm *StateMachine) processRequest(ctx *Context, req interface{}) (resp interface{}, errCode ErrCode) {
-	var tree *Tree
-	watches := WatchUpdates{}
-
-	switch req := req.(type) {
-	case *CreateRequest:
-		tree, resp, errCode = consensus.stateMachine.tree.Create(ctx, req, &watches)
-	case *getChildren2Request:
-		resp, errCode = consensus.stateMachine.tree.GetChildren(ctx, req, &watches)
-	case *getDataRequest:
-		resp, errCode = consensus.stateMachine.tree.GetData(ctx, req, &watches)
-	case *SetDataRequest:
-		tree, resp, errCode = consensus.stateMachine.tree.SetData(ctx, req, &watches)
-	default:
-		return nil, errUnimplemented
-	}
-
-	if errCode != errOk {
-		return nil, errCode
-	}
-	if tree != nil {
-		consensus.stateMachine.tree = tree
-	}
+func (sm *StateMachine) updateWatches(ctx *Context, watches WatchUpdates) {
 	for _, event := range watches.fire {
 		sm.fireWatch(ctx.zxid, event)
 	}
 	for _, event := range watches.add {
 		sm.addWatch(event, ctx.sessionId)
 	}
-	return resp, errOk
+}
+
+func (sm *StateMachine) Create(ctx *Context, req *CreateRequest) (resp *createResponse, errCode ErrCode) {
+	watches := WatchUpdates{}
+	tree, resp, errCode := sm.tree.Create(ctx, req, &watches)
+	if errCode == errOk {
+		sm.tree = tree
+	}
+	sm.updateWatches(ctx, watches)
+	return
+}
+
+func (sm *StateMachine) GetChildren(ctx *Context, req *getChildren2Request) (resp *getChildren2Response, errCode ErrCode) {
+	watches := WatchUpdates{}
+	resp, errCode = sm.tree.GetChildren(ctx, req, &watches)
+	sm.updateWatches(ctx, watches)
+	return
+}
+
+func (sm *StateMachine) GetData(ctx *Context, req *getDataRequest) (resp *getDataResponse, errCode ErrCode) {
+	watches := WatchUpdates{}
+	resp, errCode = sm.tree.GetData(ctx, req, &watches)
+	sm.updateWatches(ctx, watches)
+	return
+}
+
+func (sm *StateMachine) SetData(ctx *Context, req *SetDataRequest) (resp *setDataResponse, errCode ErrCode) {
+	watches := WatchUpdates{}
+	tree, resp, errCode := sm.tree.SetData(ctx, req, &watches)
+	if errCode == errOk {
+		sm.tree = tree
+	}
+	sm.updateWatches(ctx, watches)
+	return
 }
