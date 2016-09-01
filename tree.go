@@ -33,6 +33,14 @@ func splitPath(path Path) []Component {
 	return components
 }
 
+func joinPath(components []Component) Path {
+	ss := make([]string, 0, len(components))
+	for _, c := range components {
+		ss = append(ss, string(c))
+	}
+	return "/" + Path(strings.Join(ss, "/"))
+}
+
 func (t *Tree) shallowClone() *Tree {
 	tmp := *t
 	return &tmp
@@ -49,7 +57,7 @@ func (old *Tree) withChild(name Component, child *Tree) *Tree {
 }
 
 // TODO: req.Flags
-func (t *Tree) Create(ctx *Context, req *CreateRequest) (*Tree, *createResponse, ErrCode) {
+func (t *Tree) Create(ctx *Context, req *CreateRequest, watches *WatchUpdates) (*Tree, *createResponse, ErrCode) {
 	var do func(node *Tree, components []Component) (*Tree, ErrCode)
 	do = func(node *Tree, components []Component) (*Tree, ErrCode) {
 		if len(components) == 1 {
@@ -57,6 +65,9 @@ func (t *Tree) Create(ctx *Context, req *CreateRequest) (*Tree, *createResponse,
 			if ok {
 				return nil, errNodeExists
 			}
+			watches.fire = append(watches.fire,
+				TreeEvent{req.Path, EventNodeCreated},
+				TreeEvent{joinPath(components[:len(components)-1]), EventNodeChildrenChanged})
 			return node.withChild(components[0], &Tree{
 				data: req.Data,
 				acl:  req.Acl,
@@ -97,8 +108,7 @@ func (p ComponentSortable) Len() int           { return len(p) }
 func (p ComponentSortable) Less(i, j int) bool { return p[i] < p[j] }
 func (p ComponentSortable) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
-// TODO: req.Watch
-func (t *Tree) GetChildren(ctx *Context, req *getChildren2Request) (*Tree, *getChildren2Response, ErrCode) {
+func (t *Tree) GetChildren(ctx *Context, req *getChildren2Request, watches *WatchUpdates) (*getChildren2Response, ErrCode) {
 	resp := &getChildren2Response{}
 	var do func(node *Tree, components []Component) ErrCode
 	do = func(node *Tree, components []Component) ErrCode {
@@ -109,6 +119,11 @@ func (t *Tree) GetChildren(ctx *Context, req *getChildren2Request) (*Tree, *getC
 			}
 			sort.Sort(ComponentSortable(resp.Children))
 			resp.Stat = node.stat
+			if req.Watch {
+				watches.add = append(watches.add,
+					TreeEvent{req.Path, EventNodeChildrenChanged},
+					TreeEvent{req.Path, EventNodeDeleted})
+			}
 			return errOk
 		} else {
 			child, ok := node.children[components[0]]
@@ -120,19 +135,23 @@ func (t *Tree) GetChildren(ctx *Context, req *getChildren2Request) (*Tree, *getC
 	}
 	err := do(t, splitPath(req.Path))
 	if err != errOk {
-		return nil, nil, err
+		return nil, err
 	}
-	return t, resp, errOk
+	return resp, errOk
 }
 
-// TODO: Watch
-func (t *Tree) GetData(ctx *Context, req *getDataRequest) (*Tree, *getDataResponse, ErrCode) {
+func (t *Tree) GetData(ctx *Context, req *getDataRequest, watches *WatchUpdates) (*getDataResponse, ErrCode) {
 	resp := &getDataResponse{}
 	var do func(node *Tree, components []Component) ErrCode
 	do = func(node *Tree, components []Component) ErrCode {
 		if len(components) == 0 {
 			resp.Data = node.data
 			resp.Stat = node.stat
+			if req.Watch {
+				watches.add = append(watches.add,
+					TreeEvent{req.Path, EventNodeDataChanged},
+					TreeEvent{req.Path, EventNodeDeleted})
+			}
 			return errOk
 		} else {
 			child, ok := node.children[components[0]]
@@ -144,13 +163,12 @@ func (t *Tree) GetData(ctx *Context, req *getDataRequest) (*Tree, *getDataRespon
 	}
 	err := do(t, splitPath(req.Path))
 	if err != errOk {
-		return nil, nil, err
+		return nil, err
 	}
-	return t, resp, errOk
+	return resp, errOk
 }
 
-// TODO: Version
-func (t *Tree) SetData(ctx *Context, req *SetDataRequest) (*Tree, *setDataResponse, ErrCode) {
+func (t *Tree) SetData(ctx *Context, req *SetDataRequest, watches *WatchUpdates) (*Tree, *setDataResponse, ErrCode) {
 	resp := &setDataResponse{}
 	var do func(node *Tree, components []Component) (*Tree, ErrCode)
 	do = func(node *Tree, components []Component) (*Tree, ErrCode) {
@@ -164,6 +182,8 @@ func (t *Tree) SetData(ctx *Context, req *SetDataRequest) (*Tree, *setDataRespon
 			node.stat.Mtime = ctx.time
 			node.stat.Version += 1 // TODO: overflow?
 			resp.Stat = node.stat
+			watches.fire = append(watches.fire,
+				TreeEvent{req.Path, EventNodeDataChanged})
 			return node, errOk
 		} else {
 			child, ok := node.children[components[0]]

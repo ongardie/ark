@@ -27,11 +27,12 @@ var consensus = Consensus{
 	stateMachine: NewStateMachine(),
 }
 
-func getContext() *Context {
+func getContext(conn *Connection) *Context {
 	consensus.zxid++
 	ctx := &Context{
-		zxid: consensus.zxid,
-		time: time.Now().Unix(),
+		zxid:      consensus.zxid,
+		time:      time.Now().Unix(),
+		sessionId: conn.sessionId,
 	}
 	ctx.rand = make([]byte, SessionPasswordLen)
 	_, err := cryptoRand.Read(ctx.rand)
@@ -49,7 +50,7 @@ func processConnect(conn *Connection, req *connectRequest) (*connectResponse, Er
 		TimeOut:         req.TimeOut,
 	}
 	if req.SessionID == 0 {
-		resp.SessionID, resp.Passwd = consensus.stateMachine.createSession(getContext())
+		resp.SessionID, resp.Passwd = consensus.stateMachine.createSession(getContext(conn))
 	} else {
 		resp.SessionID = req.SessionID
 		resp.Passwd = req.Passwd
@@ -58,51 +59,8 @@ func processConnect(conn *Connection, req *connectRequest) (*connectResponse, Er
 	if err != errOk {
 		return nil, err
 	}
+	conn.sessionId = resp.SessionID
 	return resp, errOk
-}
-
-func processRequest(req interface{}) (interface{}, ErrCode) {
-	consensus.mutex.Lock()
-	defer consensus.mutex.Unlock()
-	ctx := getContext()
-
-	switch req := req.(type) {
-
-	case *CreateRequest:
-		tree, resp, errCode := consensus.stateMachine.tree.Create(ctx, req)
-		if errCode != errOk {
-			return nil, errCode
-		}
-		consensus.stateMachine.tree = tree
-		return resp, errOk
-
-	case *getChildren2Request:
-		tree, resp, errCode := consensus.stateMachine.tree.GetChildren(ctx, req)
-		if errCode != errOk {
-			return nil, errCode
-		}
-		consensus.stateMachine.tree = tree
-		return resp, errOk
-
-	case *getDataRequest:
-		tree, resp, errCode := consensus.stateMachine.tree.GetData(ctx, req)
-		if errCode != errOk {
-			return nil, errCode
-		}
-		consensus.stateMachine.tree = tree
-		return resp, errOk
-
-	case *SetDataRequest:
-		tree, resp, errCode := consensus.stateMachine.tree.SetData(ctx, req)
-		if errCode != errOk {
-			return nil, errCode
-		}
-		consensus.stateMachine.tree = tree
-		return resp, errOk
-
-	default:
-		return nil, errUnimplemented
-	}
 }
 
 func readMessage(conn net.Conn, msg interface{}) ([]byte, error) {
@@ -169,10 +127,10 @@ func sendMessage(conn net.Conn, header interface{}, msg interface{}) error {
 	}
 }
 
-func handleRequest(conn net.Conn) error {
+func handleRequest(conn *Connection) error {
 	log.Printf("Waiting for incoming request")
 	header := &requestHeader{}
-	more, err := readMessage(conn, header)
+	more, err := readMessage(conn.netConn, header)
 	if err != nil {
 		return fmt.Errorf("error reading request header: %v", err)
 	}
@@ -183,7 +141,7 @@ func handleRequest(conn net.Conn) error {
 	log.Printf("Receiving %v", name)
 	if header.Opcode == opPing {
 		log.Printf("Sending pong")
-		err = sendMessage(conn, &pingResponse{}, nil)
+		err = sendMessage(conn.netConn, &pingResponse{}, nil)
 		if err != nil {
 			return fmt.Errorf("error sending pong: %v", err)
 		}
@@ -200,18 +158,22 @@ func handleRequest(conn net.Conn) error {
 	log.Printf("Read: %#v", req)
 
 	respHeader := &responseHeader{
-		Xid: header.Xid,
-		Err: errOk,
+		Xid:  header.Xid,
+		Zxid: 1, // TODO
+		Err:  errOk,
 	}
 	log.Printf("Processing request %#v", req)
-	resp, errCode := processRequest(req)
+
+	consensus.mutex.Lock()
+	resp, errCode := consensus.stateMachine.processRequest(getContext(conn), req)
+	consensus.mutex.Unlock()
 	if len(more) > 0 {
 		log.Printf("unexpected bytes after reading %v request: %v", name, more)
 	}
 	if errCode != errOk {
 		respHeader.Err = errCode
 		log.Printf("Replying with error header to %v: %+v", name, respHeader)
-		err = sendMessage(conn, respHeader, nil)
+		err = sendMessage(conn.netConn, respHeader, nil)
 		if err != nil {
 			return fmt.Errorf("Error sending response header to %v: %v", name, err)
 		}
@@ -221,7 +183,7 @@ func handleRequest(conn net.Conn) error {
 		return fmt.Errorf("response not set for %v", name)
 	}
 	log.Printf("reply: %+v value %+v", respHeader, resp)
-	err = sendMessage(conn, respHeader, resp)
+	err = sendMessage(conn.netConn, respHeader, resp)
 	if err != nil {
 		return fmt.Errorf("Error sending response to %v: %v", name, err)
 	}
@@ -229,12 +191,12 @@ func handleRequest(conn net.Conn) error {
 	return nil
 }
 
-func handleConnection(conn net.Conn) {
-	defer conn.Close()
+func handleConnection(conn *Connection) {
+	defer conn.netConn.Close()
 	log.Print("incoming connection")
 
 	req := &connectRequest{}
-	buf, err := readMessage(conn, req)
+	buf, err := readMessage(conn.netConn, req)
 	if err != nil {
 		log.Printf("error reading ConnectRequest: %v", err)
 		return
@@ -249,7 +211,7 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 	log.Printf("connection request: %#v", req)
-	resp, errCode := processConnect(&Connection{conn}, req)
+	resp, errCode := processConnect(conn, req)
 	if errCode != errOk {
 		// TODO: what am I supposed to do with this?
 		log.Printf("Can't satisfy connection request (%v), dropping", errCode.toError())
@@ -263,7 +225,7 @@ func handleConnection(conn net.Conn) {
 			readOnly: false,
 		}
 	}
-	err = sendMessage(conn, resp, supplement)
+	err = sendMessage(conn.netConn, resp, supplement)
 	if err != nil {
 		log.Printf("error sending ConnectResponse: %v", err)
 		return
@@ -288,7 +250,7 @@ func main() {
 	for {
 		conn, err := listener.Accept()
 		if err == nil {
-			go handleConnection(conn)
+			go handleConnection(&Connection{netConn: conn})
 		} else {
 			log.Printf("Error from Accept: %v", err)
 		}
