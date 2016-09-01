@@ -25,9 +25,6 @@ type Context struct {
 }
 
 type SessionIds []SessionId
-type Connection struct {
-	sessionId SessionId
-}
 
 type TreeEvent struct {
 	path  Path
@@ -41,7 +38,7 @@ type WatchUpdates struct {
 
 type Session struct {
 	password SessionPassword
-	conn     *Connection
+	conn     Connection
 }
 
 func NewStateMachine() *StateMachine {
@@ -66,7 +63,7 @@ func (sm *StateMachine) createSession(ctx *Context) (SessionId, SessionPassword)
 	return sessionId, password
 }
 
-func (sm *StateMachine) setConn(sessionId SessionId, password SessionPassword, conn *Connection) ErrCode {
+func (sm *StateMachine) setConn(sessionId SessionId, password SessionPassword, conn Connection) ErrCode {
 	session, ok := sm.sessions[sessionId]
 	if !ok {
 		log.Printf("Session %v not found", sessionId)
@@ -97,13 +94,16 @@ func (sm *StateMachine) fireWatch(zxid ZXID, event TreeEvent) {
 			log.Printf("Disconnected session %v was watching %+v", sessionId, event)
 			continue
 		}
-		log.Printf("Need to notify session %v of %+v", sessionId, event)
-		// TODO: queue TreeEvent on session.conn
+		log.Printf("Notifying session %v of %+v", sessionId, event)
+		session.conn.Notify(zxid, event)
 	}
 	delete(sm.watches, event)
 }
 
 func (sm *StateMachine) addWatch(event TreeEvent, sessionId SessionId) {
+	if sessionId == 0 {
+		log.Fatalf("0 is not a valid session ID")
+	}
 	sessionIds, ok := sm.watches[event]
 	if !ok {
 		log.Printf("Registering session %v for %+v", sessionId, event)

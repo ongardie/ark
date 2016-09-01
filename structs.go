@@ -142,7 +142,7 @@ type requestHeader struct {
 
 type responseHeader struct {
 	Xid  int32
-	Zxid int64
+	Zxid ZXID
 	Err  ErrCode
 }
 

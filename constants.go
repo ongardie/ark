@@ -39,6 +39,16 @@ import (
 	"errors"
 )
 
+// Diego added this
+const (
+	XidWatcherEvent = -1
+	XidPing         = -2
+	XidAuth         = -4
+	XidSetWatches   = -8
+)
+
+// end
+
 const (
 	protocolVersion = 0
 
@@ -93,13 +103,11 @@ const (
 	StateUnknown           State = -1
 	StateDisconnected      State = 0
 	StateConnecting        State = 1
+	StateConnected         State = 3
 	StateAuthFailed        State = 4
 	StateConnectedReadOnly State = 5
 	StateSaslAuthenticated State = 6
 	StateExpired           State = -112
-
-	StateConnected  = State(100)
-	StateHasSession = State(101)
 )
 
 const (
@@ -117,7 +125,6 @@ var (
 		StateAuthFailed:        "StateAuthFailed",
 		StateConnecting:        "StateConnecting",
 		StateConnected:         "StateConnected",
-		StateHasSession:        "StateHasSession",
 	}
 )
 

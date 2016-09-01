@@ -10,14 +10,15 @@ type RPC interface {
 }
 
 type baseRPC struct {
-	conn       *Connection
+	conn       Connection
+	sessionId  SessionId
 	errReply_  func(ErrCode)
 	reqHeader  requestHeader
 	respHeader responseHeader
 }
 
 type ConnectRPC struct {
-	conn      *Connection
+	conn      Connection
 	errReply_ func(ErrCode)
 	req       *connectRequest
 	reply     func(*connectResponse)

@@ -14,6 +14,10 @@ import (
 	"time"
 )
 
+type Connection interface {
+	Notify(zxid ZXID, event TreeEvent)
+}
+
 type Consensus struct {
 	mutex        sync.Mutex
 	zxid         ZXID
@@ -24,12 +28,12 @@ var consensus = Consensus{
 	stateMachine: NewStateMachine(),
 }
 
-func getContext(conn *Connection) *Context {
+func getContext(sessionId SessionId) *Context {
 	consensus.zxid++
 	ctx := &Context{
 		zxid:      consensus.zxid,
 		time:      time.Now().Unix(),
-		sessionId: conn.sessionId,
+		sessionId: sessionId,
 	}
 	ctx.rand = make([]byte, SessionPasswordLen)
 	_, err := cryptoRand.Read(ctx.rand)
@@ -45,7 +49,7 @@ func processConnect(rpc *ConnectRPC) {
 		TimeOut:         rpc.req.TimeOut,
 	}
 	if rpc.req.SessionID == 0 {
-		resp.SessionID, resp.Passwd = consensus.stateMachine.createSession(getContext(rpc.conn))
+		resp.SessionID, resp.Passwd = consensus.stateMachine.createSession(getContext(0))
 	} else {
 		resp.SessionID = rpc.req.SessionID
 		resp.Passwd = rpc.req.Passwd
@@ -55,7 +59,6 @@ func processConnect(rpc *ConnectRPC) {
 		rpc.errReply(err)
 		return
 	}
-	rpc.conn.sessionId = resp.SessionID
 	rpc.reply(resp)
 }
 
@@ -72,7 +75,7 @@ func handler(rpcChan <-chan RPC) {
 			rpc.reply()
 
 		case *CreateRPC:
-			resp, errCode := consensus.stateMachine.Create(getContext(rpc.conn), rpc.req)
+			resp, errCode := consensus.stateMachine.Create(getContext(rpc.sessionId), rpc.req)
 			if errCode == errOk {
 				rpc.reply(resp)
 			} else {
@@ -80,7 +83,7 @@ func handler(rpcChan <-chan RPC) {
 			}
 
 		case *GetChildrenRPC:
-			resp, errCode := consensus.stateMachine.GetChildren(getContext(rpc.conn), rpc.req)
+			resp, errCode := consensus.stateMachine.GetChildren(getContext(rpc.sessionId), rpc.req)
 			if errCode == errOk {
 				rpc.reply(resp)
 			} else {
@@ -88,7 +91,7 @@ func handler(rpcChan <-chan RPC) {
 			}
 
 		case *GetDataRPC:
-			resp, errCode := consensus.stateMachine.GetData(getContext(rpc.conn), rpc.req)
+			resp, errCode := consensus.stateMachine.GetData(getContext(rpc.sessionId), rpc.req)
 			if errCode == errOk {
 				rpc.reply(resp)
 			} else {
@@ -96,7 +99,7 @@ func handler(rpcChan <-chan RPC) {
 			}
 
 		case *SetDataRPC:
-			resp, errCode := consensus.stateMachine.SetData(getContext(rpc.conn), rpc.req)
+			resp, errCode := consensus.stateMachine.SetData(getContext(rpc.sessionId), rpc.req)
 			if errCode == errOk {
 				rpc.reply(resp)
 			} else {

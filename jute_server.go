@@ -49,11 +49,38 @@ type Received struct {
 }
 
 type JuteConnection struct {
-	appConn   Connection
 	netConn   net.Conn
 	received  chan<- Received
 	sendQueue *InfiniteQueue
 	closeCh   chan struct{}
+	sessionId SessionId
+}
+
+func (conn *JuteConnection) Notify(zxid ZXID, event TreeEvent) {
+	respHeader := responseHeader{
+		Xid:  XidWatcherEvent,
+		Zxid: zxid,
+		Err:  errOk,
+	}
+	msg := watcherEvent{
+		Type:  event.which,
+		State: StateConnected,
+		Path:  event.path,
+	}
+	log.Printf("Queuing watch notification %+v %+v", respHeader, msg)
+	headerBuf, err := encode(&respHeader)
+	if err != nil {
+		log.Printf("Error encoding watch header: %v", err)
+		conn.close()
+		return
+	}
+	msgBuf, err := encode(&msg)
+	if err != nil {
+		log.Printf("Error encoding watch: %v", err)
+		conn.close()
+		return
+	}
+	conn.sendQueue.Push(append(headerBuf, msgBuf...))
 }
 
 func (conn *JuteConnection) handshake() {
@@ -264,7 +291,7 @@ func (s *JuteServer) processConnReq(received Received) error {
 	}
 	log.Printf("connection request: %#v", req)
 	s.rpcChan <- &ConnectRPC{
-		conn: &received.conn.appConn,
+		conn: received.conn,
 		req:  req,
 		errReply_: func(errCode ErrCode) {
 			// TODO: what am I supposed to do with this?
@@ -282,6 +309,7 @@ func (s *JuteServer) processConnReq(received Received) error {
 			if sendReadOnlyByte {
 				buf = append(buf, 0)
 			}
+			received.conn.sessionId = resp.SessionID
 			received.conn.sendQueue.Push(buf)
 		},
 	}
@@ -293,7 +321,8 @@ func (s *JuteServer) process(received Received) error {
 		return s.processConnReq(received)
 	}
 	base := baseRPC{
-		conn: &received.conn.appConn,
+		conn:      received.conn,
+		sessionId: received.conn.sessionId,
 	}
 	more, err := decode(received.msg, &base.reqHeader)
 	if err != nil {
