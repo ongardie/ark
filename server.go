@@ -11,19 +11,19 @@ import (
 	"log"
 	"net"
 	"os"
-	"sync"
 	"time"
+
+	"salesforce.com/zoolater/jute"
+	"salesforce.com/zoolater/proto"
+	"salesforce.com/zoolater/statemachine"
 
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
 )
 
-type Connection interface {
-	Notify(zxid ZXID, event TreeEvent)
-}
-
 type Server struct {
-	raft struct {
+	stateMachine *statemachine.StateMachine
+	raft         struct {
 		settings    *raft.Config
 		stableStore raft.StableStore
 		logStore    raft.LogStore
@@ -33,99 +33,131 @@ type Server struct {
 	}
 }
 
-type Consensus struct {
-	mutex        sync.Mutex
-	zxid         ZXID
-	stateMachine *StateMachine
-}
-
-var consensus = Consensus{
-	stateMachine: NewStateMachine(),
-}
-
-func getContext(sessionId SessionId) *Context {
-	consensus.zxid++
-	ctx := &Context{
-		zxid:      consensus.zxid,
-		time:      time.Now().Unix(),
-		sessionId: sessionId,
-	}
-	ctx.rand = make([]byte, SessionPasswordLen)
-	_, err := cryptoRand.Read(ctx.rand)
+func getRand(n int) []byte {
+	rand := make([]byte, n)
+	_, err := cryptoRand.Read(rand)
 	if err != nil {
 		log.Fatalf("Could not get random bytes: %v", err)
+		return nil
 	}
-	return ctx
+	return rand
 }
 
 func (s *Server) processConnect(rpc *ConnectRPC) {
-	resp := &connectResponse{
-		ProtocolVersion: 12, // TODO: set this like ZooKeeper does
-		TimeOut:         rpc.req.TimeOut,
+	header := statemachine.CommandHeader1{
+		CmdType:   statemachine.ConnectCommand,
+		SessionId: 0,
+		Time:      time.Now().Unix(),
+		Rand:      getRand(proto.SessionPasswordLen),
 	}
-	if rpc.req.SessionID == 0 {
-		resp.SessionID, resp.Passwd = consensus.stateMachine.createSession(getContext(0))
-	} else {
-		resp.SessionID = rpc.req.SessionID
-		resp.Passwd = rpc.req.Passwd
-	}
-	err := consensus.stateMachine.setConn(resp.SessionID, resp.Passwd, rpc.conn)
-	if err != errOk {
-		rpc.errReply(err)
+	headerBuf, err := jute.Encode(&header)
+	if err != nil {
+		log.Printf("Failed to encode connect log entry header: %v", err)
+		rpc.conn.Close()
 		return
 	}
-	rpc.reply(resp)
+	buf := append(append([]byte{1}, headerBuf...), rpc.reqJute...)
+
+	future := s.raft.handle.Apply(buf, 0)
+	err = future.Error()
+	if err != nil {
+		log.Printf("Failed to commit connect command: %v", err)
+		rpc.errReply(proto.ErrOperationTimeout) // TODO
+		return
+	}
+	resp := future.Response()
+	log.Printf("Committed entry %v and output %+v", future.Index(), resp)
+
+	switch resp := resp.(type) {
+	case proto.ErrCode:
+		rpc.errReply(resp)
+	case *proto.ConnectResponse:
+		rpc.reply(resp)
+	default:
+		log.Fatalf("Unexpected output type for connect command: %T", resp)
+	}
 }
 
-func (s *Server) handler(rpcChan <-chan RPC) {
+func (s *Server) processCommand(rpc *RPC) {
+	log.Printf("Processing %v command", rpc.opName)
+	header := statemachine.CommandHeader1{
+		CmdType:   statemachine.NormalCommand,
+		SessionId: rpc.conn.SessionId(),
+		Time:      time.Now().Unix(),
+		Rand:      getRand(proto.SessionPasswordLen),
+	}
+	headerBuf, err := jute.Encode(&header)
+	if err != nil {
+		log.Printf("Failed to encode log entry header: %v", err)
+		rpc.conn.Close()
+		return
+	}
+	buf := []byte{1}
+	buf = append(buf, headerBuf...)
+	buf = append(buf, rpc.reqHeaderJute...)
+	buf = append(buf, rpc.req...)
+	future := s.raft.handle.Apply(buf, 0)
+	err = future.Error()
+	if err != nil {
+		log.Printf("Failed to commit %v command: %v", rpc.opName, err)
+		rpc.errReply(proto.ErrOperationTimeout) // TODO
+		return
+	}
+	resp := future.Response()
+	log.Printf("Committed entry %v", future.Index())
+
+	switch resp := resp.(type) {
+	case proto.ErrCode:
+		rpc.errReply(resp)
+	case []byte:
+		rpc.reply(proto.ZXID(future.Index()), resp)
+	default:
+		log.Fatalf("Unexpected output type for %v command: %T (%#v)", rpc.opName, resp, resp)
+	}
+}
+
+func (s *Server) processQuery(rpc *RPC) {
+	log.Printf("Processing %v query", rpc.opName)
+	zxid, resp, err := s.stateMachine.Query(rpc.conn,
+		proto.ZXID(0), // TODO: ensure client sees ZXID going forward
+		rpc.reqHeader.OpCode, rpc.req)
+	if err == proto.ErrOk {
+		rpc.reply(zxid, resp)
+	} else {
+		rpc.errReply(err)
+	}
+}
+
+func isReadOnly(opCode proto.OpCode) bool {
+	switch opCode {
+	case proto.OpExists:
+		return true
+	case proto.OpGetAcl:
+		return true
+	case proto.OpGetChildren:
+		return true
+	case proto.OpGetChildren2:
+		return true
+	case proto.OpGetData:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) handler(rpcChan <-chan RPCish) {
 	for {
 		rpc := <-rpcChan
-		consensus.mutex.Lock()
 		switch rpc := rpc.(type) {
 		case *ConnectRPC:
 			s.processConnect(rpc)
-
-		case *PingRPC:
-			log.Printf("Sending pong")
-			rpc.reply()
-
-		case *CreateRPC:
-			resp, errCode := consensus.stateMachine.Create(getContext(rpc.sessionId), rpc.req)
-			if errCode == errOk {
-				rpc.reply(resp)
+		case *RPC:
+			if isReadOnly(rpc.reqHeader.OpCode) {
+				s.processQuery(rpc)
 			} else {
-				rpc.errReply(errCode)
+				s.processCommand(rpc)
 			}
-
-		case *GetChildrenRPC:
-			resp, errCode := consensus.stateMachine.GetChildren(getContext(rpc.sessionId), rpc.req)
-			if errCode == errOk {
-				rpc.reply(resp)
-			} else {
-				rpc.errReply(errCode)
-			}
-
-		case *GetDataRPC:
-			resp, errCode := consensus.stateMachine.GetData(getContext(rpc.sessionId), rpc.req)
-			if errCode == errOk {
-				rpc.reply(resp)
-			} else {
-				rpc.errReply(errCode)
-			}
-
-		case *SetDataRPC:
-			resp, errCode := consensus.stateMachine.SetData(getContext(rpc.sessionId), rpc.req)
-			if errCode == errOk {
-				rpc.reply(resp)
-			} else {
-				rpc.errReply(errCode)
-			}
-
-		default:
-			log.Printf("Unimplemended RPC: %T", rpc)
-			rpc.errReply(errUnimplemented)
 		}
-		consensus.mutex.Unlock()
 	}
 }
 
@@ -173,9 +205,7 @@ func (s *Server) startRaft() error {
 		return fmt.Errorf("Unable to start Raft transport: %v\n", err)
 	}
 
-	var stateMachine raft.FSM // TODO
-
-	s.raft.handle, err = raft.NewRaft(s.raft.settings, stateMachine,
+	s.raft.handle, err = raft.NewRaft(s.raft.settings, s.stateMachine,
 		s.raft.logStore, s.raft.stableStore, s.raft.snapStore, s.raft.transport)
 	if err != nil {
 		return fmt.Errorf("Unable to start Raft server: %v\n", err)
@@ -185,7 +215,7 @@ func (s *Server) startRaft() error {
 }
 
 func (s *Server) serve() error {
-	rpcChan := make(chan RPC)
+	rpcChan := make(chan RPCish)
 
 	log.Print("listening for ZooKeeper clients on port 2181")
 	juteServer := NewJuteServer(rpcChan)
@@ -201,7 +231,9 @@ func (s *Server) serve() error {
 }
 
 func main() {
-	s := &Server{}
+	s := &Server{
+		stateMachine: statemachine.NewStateMachine(),
+	}
 	err := s.startRaft()
 	if err != nil {
 		log.Printf("error starting Raft: %v", err)

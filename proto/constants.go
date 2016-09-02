@@ -33,7 +33,7 @@ Copyright (c) 2016, salesforce.com, inc.
 All rights reserved.
 */
 
-package main
+package proto
 
 import (
 	"errors"
@@ -47,6 +47,8 @@ const (
 	XidSetWatches   = -8
 )
 
+type OpCode int32
+
 // end
 
 const (
@@ -56,26 +58,24 @@ const (
 )
 
 const (
-	opNotify       = 0
-	opCreate       = 1
-	opDelete       = 2
-	opExists       = 3
-	opGetData      = 4
-	opSetData      = 5
-	opGetAcl       = 6
-	opSetAcl       = 7
-	opGetChildren  = 8
-	opSync         = 9
-	opPing         = 11
-	opGetChildren2 = 12
-	opCheck        = 13
-	opMulti        = 14
-	opClose        = -11
-	opSetAuth      = 100
-	opSetWatches   = 101
-	opError        = -1
-	// Not in protocol, used internally
-	opWatcherEvent = -2
+	OpNotify       OpCode = 0
+	OpCreate              = 1
+	OpDelete              = 2
+	OpExists              = 3
+	OpGetData             = 4
+	OpSetData             = 5
+	OpGetAcl              = 6
+	OpSetAcl              = 7
+	OpGetChildren         = 8
+	OpSync                = 9
+	OpPing                = 11
+	OpGetChildren2        = 12
+	OpCheck               = 13
+	OpMulti               = 14
+	OpClose               = -11
+	OpSetAuth             = 100
+	OpSetWatches          = 101
+	OpError               = -1
 )
 
 const (
@@ -140,76 +140,76 @@ func (s State) String() string {
 type ErrCode int32
 
 var (
-	ErrConnectionClosed        = errors.New("zk: connection closed")
-	ErrUnknown                 = errors.New("zk: unknown error")
-	ErrAPIError                = errors.New("zk: api error")
-	ErrNoNode                  = errors.New("zk: node does not exist")
-	ErrNoAuth                  = errors.New("zk: not authenticated")
-	ErrBadVersion              = errors.New("zk: version conflict")
-	ErrNoChildrenForEphemerals = errors.New("zk: ephemeral nodes may not have children")
-	ErrNodeExists              = errors.New("zk: node already exists")
-	ErrNotEmpty                = errors.New("zk: node has children")
-	ErrSessionExpired          = errors.New("zk: session has been expired by the server")
-	ErrInvalidACL              = errors.New("zk: invalid ACL specified")
-	ErrAuthFailed              = errors.New("zk: client authentication failed")
-	ErrClosing                 = errors.New("zk: zookeeper is closing")
-	ErrNothing                 = errors.New("zk: no server responsees to process")
-	ErrSessionMoved            = errors.New("zk: session moved to another server, so operation is ignored")
+	errConnectionClosed        = errors.New("zk: connection closed")
+	errUnknown                 = errors.New("zk: unknown error")
+	errAPIError                = errors.New("zk: api error")
+	errNoNode                  = errors.New("zk: node does not exist")
+	errNoAuth                  = errors.New("zk: not authenticated")
+	errBadVersion              = errors.New("zk: version conflict")
+	errNoChildrenForEphemerals = errors.New("zk: ephemeral nodes may not have children")
+	errNodeExists              = errors.New("zk: node already exists")
+	errNotEmpty                = errors.New("zk: node has children")
+	errSessionExpired          = errors.New("zk: session has been expired by the server")
+	errInvalidACL              = errors.New("zk: invalid ACL specified")
+	errAuthFailed              = errors.New("zk: client authentication failed")
+	errClosing                 = errors.New("zk: zookeeper is closing")
+	errNothing                 = errors.New("zk: no server responsees to process")
+	errSessionMoved            = errors.New("zk: session moved to another server, so operation is ignored")
 
 	// ErrInvalidCallback         = errors.New("zk: invalid callback specified")
 	errCodeToError = map[ErrCode]error{
-		0:                          nil,
-		errAPIError:                ErrAPIError,
-		errNoNode:                  ErrNoNode,
-		errNoAuth:                  ErrNoAuth,
-		errBadVersion:              ErrBadVersion,
-		errNoChildrenForEphemerals: ErrNoChildrenForEphemerals,
-		errNodeExists:              ErrNodeExists,
-		errNotEmpty:                ErrNotEmpty,
-		errSessionExpired:          ErrSessionExpired,
-		// errInvalidCallback:         ErrInvalidCallback,
-		errInvalidAcl:   ErrInvalidACL,
-		errAuthFailed:   ErrAuthFailed,
-		errClosing:      ErrClosing,
-		errNothing:      ErrNothing,
-		errSessionMoved: ErrSessionMoved,
+		ErrOk:                      nil,
+		ErrAPIError:                errAPIError,
+		ErrNoNode:                  errNoNode,
+		ErrNoAuth:                  errNoAuth,
+		ErrBadVersion:              errBadVersion,
+		ErrNoChildrenForEphemerals: errNoChildrenForEphemerals,
+		ErrNodeExists:              errNodeExists,
+		ErrNotEmpty:                errNotEmpty,
+		ErrSessionExpired:          errSessionExpired,
+		// ErrInvalidCallback:         errInvalidCallback,
+		ErrInvalidAcl:   errInvalidACL,
+		ErrAuthFailed:   errAuthFailed,
+		ErrClosing:      errClosing,
+		ErrNothing:      errNothing,
+		ErrSessionMoved: errSessionMoved,
 	}
 )
 
-func (e ErrCode) toError() error {
+func (e ErrCode) Error() error {
 	if err, ok := errCodeToError[e]; ok {
 		return err
 	}
-	return ErrUnknown
+	return errUnknown
 }
 
 const (
-	errOk = 0
+	ErrOk ErrCode = 0
 	// System and server-side errors
-	errSystemError          = -1
-	errRuntimeInconsistency = -2
-	errDataInconsistency    = -3
-	errConnectionLoss       = -4
-	errMarshallingError     = -5
-	errUnimplemented        = -6
-	errOperationTimeout     = -7
-	errBadArguments         = -8
-	errInvalidState         = -9
+	ErrSystemError          ErrCode = -1
+	ErrRuntimeInconsistency ErrCode = -2
+	ErrDataInconsistency    ErrCode = -3
+	ErrConnectionLoss       ErrCode = -4
+	ErrMarshallingError     ErrCode = -5
+	ErrUnimplemented        ErrCode = -6
+	ErrOperationTimeout     ErrCode = -7
+	ErrBadArguments         ErrCode = -8
+	ErrInvalidState         ErrCode = -9
 	// API errors
-	errAPIError                ErrCode = -100
-	errNoNode                  ErrCode = -101 // *
-	errNoAuth                  ErrCode = -102
-	errBadVersion              ErrCode = -103 // *
-	errNoChildrenForEphemerals ErrCode = -108
-	errNodeExists              ErrCode = -110 // *
-	errNotEmpty                ErrCode = -111
-	errSessionExpired          ErrCode = -112
-	errInvalidCallback         ErrCode = -113
-	errInvalidAcl              ErrCode = -114
-	errAuthFailed              ErrCode = -115
-	errClosing                 ErrCode = -116
-	errNothing                 ErrCode = -117
-	errSessionMoved            ErrCode = -118
+	ErrAPIError                ErrCode = -100
+	ErrNoNode                  ErrCode = -101 // *
+	ErrNoAuth                  ErrCode = -102
+	ErrBadVersion              ErrCode = -103 // *
+	ErrNoChildrenForEphemerals ErrCode = -108
+	ErrNodeExists              ErrCode = -110 // *
+	ErrNotEmpty                ErrCode = -111
+	ErrSessionExpired          ErrCode = -112
+	ErrInvalidCallback         ErrCode = -113
+	ErrInvalidAcl              ErrCode = -114
+	ErrAuthFailed              ErrCode = -115
+	ErrClosing                 ErrCode = -116
+	ErrNothing                 ErrCode = -117
+	ErrSessionMoved            ErrCode = -118
 )
 
 // Constants for ACL permissions
@@ -224,26 +224,24 @@ const (
 
 var (
 	emptyPassword = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-	opNames       = map[int32]string{
-		opNotify:       "notify",
-		opCreate:       "create",
-		opDelete:       "delete",
-		opExists:       "exists",
-		opGetData:      "getData",
-		opSetData:      "setData",
-		opGetAcl:       "getACL",
-		opSetAcl:       "setACL",
-		opGetChildren:  "getChildren",
-		opSync:         "sync",
-		opPing:         "ping",
-		opGetChildren2: "getChildren2",
-		opCheck:        "check",
-		opMulti:        "multi",
-		opClose:        "close",
-		opSetAuth:      "setAuth",
-		opSetWatches:   "setWatches",
-
-		opWatcherEvent: "watcherEvent",
+	OpNames       = map[OpCode]string{
+		OpNotify:       "notify",
+		OpCreate:       "create",
+		OpDelete:       "delete",
+		OpExists:       "exists",
+		OpGetData:      "getData",
+		OpSetData:      "setData",
+		OpGetAcl:       "getACL",
+		OpSetAcl:       "setACL",
+		OpGetChildren:  "getChildren",
+		OpSync:         "sync",
+		OpPing:         "ping",
+		OpGetChildren2: "getChildren2",
+		OpCheck:        "check",
+		OpMulti:        "multi",
+		OpClose:        "close",
+		OpSetAuth:      "setAuth",
+		OpSetWatches:   "setWatches",
 	}
 )
 

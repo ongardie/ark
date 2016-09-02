@@ -33,14 +33,10 @@ Copyright (c) 2016, salesforce.com, inc.
 All rights reserved.
 */
 
-package main
+package proto
 
 import (
-	"encoding/binary"
-	"errors"
 	"log"
-	"reflect"
-	"runtime"
 	"time"
 )
 
@@ -54,12 +50,6 @@ type SessionPassword []byte // 16 bytes
 const SessionPasswordLen = 16
 
 // end
-
-var (
-	ErrUnhandledFieldType = errors.New("zk: unhandled field type")
-	ErrPtrExpected        = errors.New("zk: encode/decode expect a non-nil pointer to struct")
-	ErrShortBuffer        = errors.New("zk: buffer too small")
-)
 
 type defaultLogger struct{}
 
@@ -135,12 +125,12 @@ type ServerStats struct {
 	Error       error
 }
 
-type requestHeader struct {
+type RequestHeader struct {
 	Xid    int32
-	Opcode int32
+	OpCode OpCode
 }
 
-type responseHeader struct {
+type ResponseHeader struct {
 	Xid  int32
 	Zxid ZXID
 	Err  ErrCode
@@ -188,7 +178,7 @@ type CheckVersionRequest PathVersionRequest
 type closeRequest struct{}
 type closeResponse struct{}
 
-type connectRequest struct {
+type ConnectRequest struct {
 	ProtocolVersion int32
 	LastZxidSeen    int64
 	TimeOut         int32
@@ -196,7 +186,7 @@ type connectRequest struct {
 	Passwd          SessionPassword
 }
 
-type connectResponse struct {
+type ConnectResponse struct {
 	ProtocolVersion int32
 	TimeOut         int32
 	SessionID       SessionId
@@ -210,39 +200,39 @@ type CreateRequest struct {
 	Flags int32
 }
 
-type createResponse pathResponse
+type CreateResponse pathResponse
 type DeleteRequest PathVersionRequest
-type deleteResponse struct{}
+type DeleteResponse struct{}
 
 type errorResponse struct {
 	Err int32
 }
 
-type existsRequest pathWatchRequest
-type existsResponse statResponse
-type getAclRequest pathRequest
+type ExistsRequest pathWatchRequest
+type ExistsResponse statResponse
+type GetAclRequest pathRequest
 
-type getAclResponse struct {
+type GetAclResponse struct {
 	Acl  []ACL
 	Stat Stat
 }
 
-type getChildrenRequest pathRequest
+type GetChildrenRequest pathRequest
 
-type getChildrenResponse struct {
+type GetChildrenResponse struct {
 	Children []Component
 }
 
-type getChildren2Request pathWatchRequest
+type GetChildren2Request pathWatchRequest
 
-type getChildren2Response struct {
+type GetChildren2Response struct {
 	Children []Component
 	Stat     Stat
 }
 
-type getDataRequest pathWatchRequest
+type GetDataRequest pathWatchRequest
 
-type getDataResponse struct {
+type GetDataResponse struct {
 	Data []byte
 	Stat Stat
 }
@@ -257,16 +247,16 @@ type getSaslRequest struct {
 	Token []byte
 }
 
-type pingRequest struct{}
-type pingResponse struct{}
+type PingRequest struct{}
+type PingResponse struct{}
 
-type setAclRequest struct {
+type SetAclRequest struct {
 	Path    Path
 	Acl     []ACL
 	Version int32
 }
 
-type setAclResponse statResponse
+type SetAclResponse statResponse
 
 type SetDataRequest struct {
 	Path    Path
@@ -274,7 +264,7 @@ type SetDataRequest struct {
 	Version int32
 }
 
-type setDataResponse statResponse
+type SetDataResponse statResponse
 
 type setMaxChildren struct {
 	Path Path
@@ -289,26 +279,26 @@ type setSaslResponse struct {
 	Token string
 }
 
-type setWatchesRequest struct {
+type SetWatchesRequest struct {
 	RelativeZxid int64
 	DataWatches  []string
 	ExistWatches []string
 	ChildWatches []string
 }
 
-type setWatchesResponse struct{}
+type SetWatchesResponse struct{}
 
-type syncRequest pathRequest
-type syncResponse pathResponse
+type SyncRequest pathRequest
+type SyncResponse pathResponse
 
-type setAuthRequest auth
-type setAuthResponse struct{}
+type SetAuthRequest auth
+type SetAuthResponse struct{}
 
 type multiRequestOp struct {
 	Header multiHeader
 	Op     interface{}
 }
-type multiRequest struct {
+type MultiRequest struct {
 	Ops        []multiRequestOp
 	DoneHeader multiHeader
 }
@@ -318,11 +308,12 @@ type multiResponseOp struct {
 	Stat   *Stat
 	Err    ErrCode
 }
-type multiResponse struct {
+type MultiResponse struct {
 	Ops        []multiResponseOp
 	DoneHeader multiHeader
 }
 
+/*
 func (r *multiRequest) Encode(buf []byte) (int, error) {
 	total := 0
 	for _, op := range r.Ops {
@@ -420,236 +411,48 @@ func (r *multiResponse) Decode(buf []byte) (int, error) {
 	}
 	return total, multiErr
 }
+*/
 
-type watcherEvent struct {
+type WatcherEvent struct {
 	Type  EventType
 	State State
 	Path  Path
 }
 
-type decoder interface {
-	Decode(buf []byte) (int, error)
-}
-
-type encoder interface {
-	Encode(buf []byte) (int, error)
-}
-
-func decodePacket(buf []byte, st interface{}) (n int, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			if e, ok := r.(runtime.Error); ok && e.Error() == "runtime error: slice bounds out of range" {
-				err = ErrShortBuffer
-			} else {
-				panic(r)
-			}
-		}
-	}()
-
-	v := reflect.ValueOf(st)
-	if v.Kind() != reflect.Ptr || v.IsNil() {
-		return 0, ErrPtrExpected
-	}
-	return decodePacketValue(buf, v)
-}
-
-func decodePacketValue(buf []byte, v reflect.Value) (int, error) {
-	rv := v
-	kind := v.Kind()
-	if kind == reflect.Ptr {
-		if v.IsNil() {
-			v.Set(reflect.New(v.Type().Elem()))
-		}
-		v = v.Elem()
-		kind = v.Kind()
-	}
-
-	n := 0
-	switch kind {
-	default:
-		return n, ErrUnhandledFieldType
-	case reflect.Struct:
-		if de, ok := rv.Interface().(decoder); ok {
-			return de.Decode(buf)
-		} else if de, ok := v.Interface().(decoder); ok {
-			return de.Decode(buf)
-		} else {
-			for i := 0; i < v.NumField(); i++ {
-				field := v.Field(i)
-				n2, err := decodePacketValue(buf[n:], field)
-				n += n2
-				if err != nil {
-					return n, err
-				}
-			}
-		}
-	case reflect.Bool:
-		v.SetBool(buf[n] != 0)
-		n++
-	case reflect.Int32:
-		v.SetInt(int64(binary.BigEndian.Uint32(buf[n : n+4])))
-		n += 4
-	case reflect.Int64:
-		v.SetInt(int64(binary.BigEndian.Uint64(buf[n : n+8])))
-		n += 8
-	case reflect.String:
-		ln := int(binary.BigEndian.Uint32(buf[n : n+4]))
-		v.SetString(string(buf[n+4 : n+4+ln]))
-		n += 4 + ln
-	case reflect.Slice:
-		switch v.Type().Elem().Kind() {
-		default:
-			count := int(binary.BigEndian.Uint32(buf[n : n+4]))
-			n += 4
-			values := reflect.MakeSlice(v.Type(), count, count)
-			v.Set(values)
-			for i := 0; i < count; i++ {
-				n2, err := decodePacketValue(buf[n:], values.Index(i))
-				n += n2
-				if err != nil {
-					return n, err
-				}
-			}
-		case reflect.Uint8:
-			ln := int(int32(binary.BigEndian.Uint32(buf[n : n+4])))
-			if ln < 0 {
-				n += 4
-				v.SetBytes(nil)
-			} else {
-				bytes := make([]byte, ln)
-				copy(bytes, buf[n+4:n+4+ln])
-				v.SetBytes(bytes)
-				n += 4 + ln
-			}
-		}
-	}
-	return n, nil
-}
-
-func encodePacket(buf []byte, st interface{}) (n int, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			if e, ok := r.(runtime.Error); ok && e.Error() == "runtime error: slice bounds out of range" {
-				err = ErrShortBuffer
-			} else {
-				panic(r)
-			}
-		}
-	}()
-
-	v := reflect.ValueOf(st)
-	if v.Kind() != reflect.Ptr || v.IsNil() {
-		return 0, ErrPtrExpected
-	}
-	return encodePacketValue(buf, v)
-}
-
-func encodePacketValue(buf []byte, v reflect.Value) (int, error) {
-	rv := v
-	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
-		v = v.Elem()
-	}
-
-	n := 0
-	switch v.Kind() {
-	default:
-		return n, ErrUnhandledFieldType
-	case reflect.Struct:
-		if en, ok := rv.Interface().(encoder); ok {
-			return en.Encode(buf)
-		} else if en, ok := v.Interface().(encoder); ok {
-			return en.Encode(buf)
-		} else {
-			for i := 0; i < v.NumField(); i++ {
-				field := v.Field(i)
-				n2, err := encodePacketValue(buf[n:], field)
-				n += n2
-				if err != nil {
-					return n, err
-				}
-			}
-		}
-	case reflect.Bool:
-		if v.Bool() {
-			buf[n] = 1
-		} else {
-			buf[n] = 0
-		}
-		n++
-	case reflect.Int32:
-		binary.BigEndian.PutUint32(buf[n:n+4], uint32(v.Int()))
-		n += 4
-	case reflect.Int64:
-		binary.BigEndian.PutUint64(buf[n:n+8], uint64(v.Int()))
-		n += 8
-	case reflect.String:
-		str := v.String()
-		binary.BigEndian.PutUint32(buf[n:n+4], uint32(len(str)))
-		copy(buf[n+4:n+4+len(str)], []byte(str))
-		n += 4 + len(str)
-	case reflect.Slice:
-		switch v.Type().Elem().Kind() {
-		default:
-			count := v.Len()
-			startN := n
-			n += 4
-			for i := 0; i < count; i++ {
-				n2, err := encodePacketValue(buf[n:], v.Index(i))
-				n += n2
-				if err != nil {
-					return n, err
-				}
-			}
-			binary.BigEndian.PutUint32(buf[startN:startN+4], uint32(count))
-		case reflect.Uint8:
-			if v.IsNil() {
-				binary.BigEndian.PutUint32(buf[n:n+4], uint32(0xffffffff))
-				n += 4
-			} else {
-				bytes := v.Bytes()
-				binary.BigEndian.PutUint32(buf[n:n+4], uint32(len(bytes)))
-				copy(buf[n+4:n+4+len(bytes)], bytes)
-				n += 4 + len(bytes)
-			}
-		}
-	}
-	return n, nil
-}
-
 func requestStructForOp(op int32) interface{} {
 	switch op {
-	case opClose:
+	case OpClose:
 		return &closeRequest{}
-	case opCreate:
+	case OpCreate:
 		return &CreateRequest{}
-	case opDelete:
+	case OpDelete:
 		return &DeleteRequest{}
-	case opExists:
-		return &existsRequest{}
-	case opGetAcl:
-		return &getAclRequest{}
-	case opGetChildren:
-		return &getChildrenRequest{}
-	case opGetChildren2:
-		return &getChildren2Request{}
-	case opGetData:
-		return &getDataRequest{}
-	case opPing:
-		return &pingRequest{}
-	case opSetAcl:
-		return &setAclRequest{}
-	case opSetData:
+	case OpExists:
+		return &ExistsRequest{}
+	case OpGetAcl:
+		return &GetAclRequest{}
+	case OpGetChildren:
+		return &GetChildrenRequest{}
+	case OpGetChildren2:
+		return &GetChildren2Request{}
+	case OpGetData:
+		return &GetDataRequest{}
+	case OpPing:
+		return &PingRequest{}
+	case OpSetAcl:
+		return &SetAclRequest{}
+	case OpSetData:
 		return &SetDataRequest{}
-	case opSetWatches:
-		return &setWatchesRequest{}
-	case opSync:
-		return &syncRequest{}
-	case opSetAuth:
-		return &setAuthRequest{}
-	case opCheck:
+	case OpSetWatches:
+		return &SetWatchesRequest{}
+	case OpSync:
+		return &SyncRequest{}
+	case OpSetAuth:
+		return &SetAuthRequest{}
+	case OpCheck:
 		return &CheckVersionRequest{}
-	case opMulti:
-		return &multiRequest{}
+	case OpMulti:
+		return &MultiRequest{}
 	}
 	return nil
 }
