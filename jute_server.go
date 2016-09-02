@@ -58,14 +58,20 @@ type JuteConnection struct {
 	sendQueue *InfiniteQueue
 	closeCh   chan struct{}
 	sessionId proto.SessionId
+	connId    statemachine.ConnectionId
 }
 
 func (conn *JuteConnection) String() string {
-	return fmt.Sprintf("Jute connection with session ID %v", conn.sessionId)
+	return fmt.Sprintf("Jute connection %v on session %v",
+		conn.connId, conn.sessionId)
 }
 
 func (conn *JuteConnection) SessionId() proto.SessionId {
 	return conn.sessionId
+}
+
+func (conn *JuteConnection) ConnId() statemachine.ConnectionId {
+	return conn.connId
 }
 
 func (conn *JuteConnection) Notify(zxid proto.ZXID, event statemachine.TreeEvent) {
@@ -306,7 +312,7 @@ func (s *JuteServer) processConnReq(received Received) error {
 			log.Printf("Can't satisfy connection request (%v), dropping", errCode.Error())
 			received.conn.Close()
 		},
-		reply: func(resp *proto.ConnectResponse) {
+		reply: func(resp *proto.ConnectResponse, connId statemachine.ConnectionId) {
 			log.Printf("Replying to connection request with %#v", resp)
 			buf, err = received.conn.Encode(resp)
 			if err != nil {
@@ -317,6 +323,7 @@ func (s *JuteServer) processConnReq(received Received) error {
 				buf = append(buf, 0)
 			}
 			received.conn.sessionId = resp.SessionID
+			received.conn.connId = connId
 			received.conn.sendQueue.Push(buf)
 		},
 	}
@@ -328,8 +335,7 @@ func (s *JuteServer) process(received Received) error {
 		return s.processConnReq(received)
 	}
 	rpc := &RPC{
-		conn:      received.conn,
-		sessionId: received.conn.sessionId,
+		conn: received.conn,
 	}
 
 	more, err := received.conn.DecodeSome(received.msg, &rpc.reqHeader)

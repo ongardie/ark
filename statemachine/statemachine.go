@@ -33,6 +33,7 @@ type Connection interface {
 	Notify(zxid proto.ZXID, event TreeEvent)
 	String() string
 	SessionId() proto.SessionId
+	ConnId() ConnectionId
 }
 
 type Connections []Connection
@@ -42,6 +43,7 @@ type context struct {
 	time      int64
 	rand      []byte
 	sessionId proto.SessionId
+	connId    ConnectionId
 }
 
 type CommandType int32
@@ -56,6 +58,7 @@ const (
 type CommandHeader1 struct {
 	CmdType   CommandType
 	SessionId proto.SessionId
+	ConnId    ConnectionId
 	Time      int64
 	Rand      []byte
 }
@@ -68,8 +71,16 @@ type TreeEvent struct {
 type NotifyEvents []TreeEvent
 type RegisterEvents []TreeEvent
 
+type ConnectionId int64
+
+type ConnectResult struct {
+	Resp   proto.ConnectResponse
+	ConnId ConnectionId
+}
+
 type Session struct {
 	password proto.SessionPassword
+	connId   ConnectionId
 }
 
 func NewStateMachine() *StateMachine {
@@ -79,32 +90,6 @@ func NewStateMachine() *StateMachine {
 		sessions:    make(map[proto.SessionId]*Session),
 		watches:     make(map[TreeEvent]Connections),
 	}
-}
-
-func (sm *StateMachine) createSession(ctx *context) (proto.SessionId, proto.SessionPassword) {
-	sessionId := proto.SessionId(ctx.zxid)
-	if len(ctx.rand) < proto.SessionPasswordLen {
-		log.Fatalf("Need %v random bytes for createSession, have %v",
-			proto.SessionPasswordLen, len(ctx.rand))
-	}
-	password := ctx.rand[:proto.SessionPasswordLen]
-	sm.sessions[sessionId] = &Session{
-		password: password,
-	}
-	return sessionId, password
-}
-
-func (sm *StateMachine) checkSession(sessionId proto.SessionId, password proto.SessionPassword) proto.ErrCode {
-	session, ok := sm.sessions[sessionId]
-	if !ok {
-		log.Printf("Session %v not found", sessionId)
-		return proto.ErrSessionExpired
-	}
-	if !bytes.Equal(session.password, password) {
-		log.Printf("Bad pasword for session %v", sessionId)
-		return proto.ErrSessionExpired
-	}
-	return proto.ErrOk
 }
 
 func (sm *StateMachine) notifyWatch(zxid proto.ZXID, event TreeEvent) {
@@ -139,6 +124,126 @@ func (sm *StateMachine) registerWatches(events RegisterEvents, conn Connection) 
 	}
 }
 
+func (sm *StateMachine) applyConnect(ctx *context, cmdBuf []byte) (*ConnectResult, proto.ErrCode) {
+	req := proto.ConnectRequest{}
+	err := jute.Decode(cmdBuf, &req)
+	if err != nil {
+		log.Printf("Error decoding connect command: %v", err)
+		return nil, proto.ErrBadArguments
+	}
+	log.Printf("State machine got connect request %+v", req)
+
+	var sessionId proto.SessionId
+	var session *Session
+	if req.SessionID == 0 { // create session
+		if len(ctx.rand) < proto.SessionPasswordLen {
+			log.Fatalf("Need %v random bytes for createSession, have %v",
+				proto.SessionPasswordLen, len(ctx.rand))
+		}
+		sessionId = proto.SessionId(ctx.zxid)
+		session = &Session{
+			password: ctx.rand[:proto.SessionPasswordLen],
+			connId:   1,
+		}
+		sm.sessions[sessionId] = session
+	} else { // attach to existing session
+		sessionId = req.SessionID
+		var ok bool
+		session, ok = sm.sessions[sessionId]
+		if !ok {
+			log.Printf("Session %v not found", sessionId)
+			return nil, proto.ErrSessionExpired
+		}
+		if !bytes.Equal(session.password, req.Passwd) {
+			log.Printf("Bad pasword for session %v", sessionId)
+			return nil, proto.ErrSessionExpired
+		}
+		session.connId++
+	}
+	return &ConnectResult{
+		proto.ConnectResponse{
+			ProtocolVersion: 12, // TODO: set this like ZooKeeper does
+			TimeOut:         req.TimeOut,
+			SessionID:       sessionId,
+			Passwd:          session.password,
+		},
+		session.connId,
+	}, proto.ErrOk
+}
+
+func (sm *StateMachine) applyCommand(ctx *context, cmdBuf []byte) ([]byte, proto.ErrCode) {
+	reqHeader := proto.RequestHeader{}
+	reqBuf, err := jute.DecodeSome(cmdBuf, &reqHeader)
+	if err != nil {
+		log.Printf("Error decoding command header: %v", err)
+		return nil, proto.ErrBadArguments
+	}
+	log.Printf("command request header: %+v", reqHeader)
+
+	var opName string
+	if name, ok := proto.OpNames[reqHeader.OpCode]; ok {
+		opName = name
+	} else {
+		opName = fmt.Sprintf("unknown (%v)", reqHeader.OpCode)
+	}
+
+	var req2 interface{}
+	var resp interface{}
+	var notify NotifyEvents
+	var tree *Tree
+	var errCode proto.ErrCode = proto.ErrAPIError
+
+	decode := func(req interface{}) bool {
+		err := jute.Decode(reqBuf, req)
+		if err != nil {
+			log.Printf("Could not decode %v bytes into %T. Ignoring.", len(reqBuf), req)
+			return false
+		}
+		req2 = req
+		return true
+	}
+
+	switch reqHeader.OpCode {
+	case proto.OpCreate:
+		if req := new(proto.CreateRequest); decode(req) {
+			tree, resp, notify, errCode = sm.tree.Create(ctx, req)
+		}
+
+	case proto.OpSetData:
+		if req := new(proto.SetDataRequest); decode(req) {
+			tree, resp, notify, errCode = sm.tree.SetData(ctx, req)
+		}
+	}
+
+	if errCode != proto.ErrOk {
+		log.Printf("%v(%+v) -> %v", opName, req2, errCode.Error())
+		return nil, errCode
+	}
+	log.Printf("%v(%+v) -> %+v, %v notifies", opName, req2, resp, len(notify))
+	sm.tree = tree
+	sm.notifyWatches(ctx.zxid, notify)
+
+	respBuf, err := jute.Encode(resp)
+	if err != nil {
+		log.Printf("Could not encode %+v", resp)
+		return nil, proto.ErrAPIError
+	}
+	return respBuf, proto.ErrOk
+}
+
+func (sm *StateMachine) gateOperation(ctx *context) proto.ErrCode {
+	session, ok := sm.sessions[ctx.sessionId]
+	if !ok {
+		log.Printf("Session %v not found", ctx.sessionId)
+		return proto.ErrSessionExpired
+	}
+	if ctx.connId != session.connId {
+		log.Printf("Expired connection ID %v for session %v", ctx.connId, ctx.sessionId)
+		return proto.ErrSessionMoved
+	}
+	return proto.ErrOk
+}
+
 func (sm *StateMachine) Apply(entry *raft.Log) interface{} {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
@@ -165,100 +270,39 @@ func (sm *StateMachine) Apply(entry *raft.Log) interface{} {
 		time:      header.Time,
 		rand:      header.Rand,
 		sessionId: header.SessionId,
+		connId:    header.ConnId,
 	}
 
 	switch header.CmdType {
-	case NoOpCommand:
-		return proto.ErrOk
-
 	case ConnectCommand:
-		req := proto.ConnectRequest{}
-		err := jute.Decode(cmdBuf, &req)
-		if err != nil {
-			log.Printf("Error decoding connect command: %v", err)
-			return proto.ErrBadArguments
+		result, err := sm.applyConnect(ctx, cmdBuf)
+		if err != proto.ErrOk {
+			return err
 		}
-		log.Printf("State machine got connect request %+v %+v", header, req)
+		return result
 
-		resp := &proto.ConnectResponse{
-			ProtocolVersion: 12, // TODO: set this like ZooKeeper does
-			TimeOut:         req.TimeOut,
-		}
-		if req.SessionID == 0 {
-			resp.SessionID, resp.Passwd = sm.createSession(ctx)
-		} else {
-			errCode := sm.checkSession(req.SessionID, req.Passwd)
-			if errCode != proto.ErrOk {
-				return errCode
-			}
-			resp.SessionID, resp.Passwd = req.SessionID, req.Passwd
-		}
-		return resp
+	case NoOpCommand:
+		return sm.gateOperation(ctx)
 
 	case NormalCommand:
-		reqHeader := proto.RequestHeader{}
-		reqBuf, err := jute.DecodeSome(cmdBuf, &reqHeader)
-		if err != nil {
-			log.Printf("Error decoding command header: %v", err)
-			return proto.ErrBadArguments
+		err := sm.gateOperation(ctx)
+		if err != proto.ErrOk {
+			return err
 		}
-		log.Printf("command request header: %+v", reqHeader)
-
-		var opName string
-		if name, ok := proto.OpNames[reqHeader.OpCode]; ok {
-			opName = name
-		} else {
-			opName = fmt.Sprintf("unknown (%v)", reqHeader.OpCode)
+		result, err := sm.applyCommand(ctx, cmdBuf)
+		if err != proto.ErrOk {
+			return err
 		}
-
-		var req2 interface{}
-		var resp interface{}
-		var notify NotifyEvents
-		var tree *Tree
-		var errCode proto.ErrCode = proto.ErrAPIError
-
-		decode := func(req interface{}) bool {
-			err := jute.Decode(reqBuf, req)
-			if err != nil {
-				log.Printf("Could not decode %v bytes into %T. Ignoring.", len(reqBuf), req)
-				return false
-			}
-			req2 = req
-			return true
-		}
-
-		switch reqHeader.OpCode {
-		case proto.OpCreate:
-			if req := new(proto.CreateRequest); decode(req) {
-				tree, resp, notify, errCode = sm.tree.Create(ctx, req)
-			}
-
-		case proto.OpSetData:
-			if req := new(proto.SetDataRequest); decode(req) {
-				tree, resp, notify, errCode = sm.tree.SetData(ctx, req)
-			}
-		}
-
-		if errCode != proto.ErrOk {
-			log.Printf("%v(%+v) -> %v", opName, req2, errCode.Error())
-			return errCode
-		}
-		log.Printf("%v(%+v) -> %+v, %v notifies", opName, req2, resp, len(notify))
-		sm.tree = tree
-		sm.notifyWatches(ctx.zxid, notify)
-
-		respBuf, err := jute.Encode(resp)
-		if err != nil {
-			log.Printf("Could not encode %+v", resp)
-			return proto.ErrAPIError
-		}
-		return respBuf
+		return result
 	}
 
 	return proto.ErrUnimplemented
 }
 
-func (sm *StateMachine) Query(conn Connection, lastZxid proto.ZXID, opCode proto.OpCode, reqBuf []byte) (proto.ZXID, []byte, proto.ErrCode) {
+func (sm *StateMachine) Query(
+	conn Connection, lastZxid proto.ZXID, opCode proto.OpCode, reqBuf []byte) (
+	proto.ZXID, []byte, proto.ErrCode) {
+
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
 	zxid := sm.lastApplied
@@ -271,6 +315,12 @@ func (sm *StateMachine) Query(conn Connection, lastZxid proto.ZXID, opCode proto
 		zxid:      zxid,
 		time:      time.Now().Unix(),
 		sessionId: conn.SessionId(),
+		connId:    conn.ConnId(),
+	}
+
+	errCode := sm.gateOperation(ctx)
+	if errCode != proto.ErrOk {
+		return 0, nil, errCode
 	}
 
 	decode := func(req interface{}) bool {
@@ -285,7 +335,7 @@ func (sm *StateMachine) Query(conn Connection, lastZxid proto.ZXID, opCode proto
 
 	var resp interface{}
 	var register RegisterEvents
-	var errCode proto.ErrCode = proto.ErrAPIError
+	errCode = proto.ErrBadArguments
 	switch opCode {
 	case proto.OpGetChildren2:
 		if req := new(proto.GetChildren2Request); decode(req) {

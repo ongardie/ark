@@ -47,6 +47,7 @@ func (s *Server) processConnect(rpc *ConnectRPC) {
 	header := statemachine.CommandHeader1{
 		CmdType:   statemachine.ConnectCommand,
 		SessionId: 0,
+		ConnId:    0,
 		Time:      time.Now().Unix(),
 		Rand:      getRand(proto.SessionPasswordLen),
 	}
@@ -65,16 +66,16 @@ func (s *Server) processConnect(rpc *ConnectRPC) {
 		rpc.errReply(proto.ErrOperationTimeout) // TODO
 		return
 	}
-	resp := future.Response()
-	log.Printf("Committed entry %v and output %+v", future.Index(), resp)
+	result := future.Response()
+	log.Printf("Committed entry %v and output %+v", future.Index(), result)
 
-	switch resp := resp.(type) {
+	switch result := result.(type) {
 	case proto.ErrCode:
-		rpc.errReply(resp)
-	case *proto.ConnectResponse:
-		rpc.reply(resp)
+		rpc.errReply(result)
+	case *statemachine.ConnectResult:
+		rpc.reply(&result.Resp, result.ConnId)
 	default:
-		log.Fatalf("Unexpected output type for connect command: %T", resp)
+		log.Fatalf("Unexpected output type for connect command: %T", result)
 	}
 }
 
@@ -83,6 +84,7 @@ func (s *Server) processCommand(rpc *RPC) {
 	header := statemachine.CommandHeader1{
 		CmdType:   statemachine.NormalCommand,
 		SessionId: rpc.conn.SessionId(),
+		ConnId:    rpc.conn.ConnId(),
 		Time:      time.Now().Unix(),
 		Rand:      getRand(proto.SessionPasswordLen),
 	}

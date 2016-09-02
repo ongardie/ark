@@ -22,12 +22,11 @@ type ConnectRPC struct {
 	reqJute  []byte
 	req      *proto.ConnectRequest
 	errReply func(proto.ErrCode)
-	reply    func(*proto.ConnectResponse)
+	reply    func(*proto.ConnectResponse, statemachine.ConnectionId)
 }
 
 type RPC struct {
 	conn          statemachine.Connection
-	sessionId     proto.SessionId
 	reqHeaderJute []byte
 	reqHeader     proto.RequestHeader
 	opName        string
