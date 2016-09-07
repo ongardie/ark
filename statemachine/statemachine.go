@@ -82,8 +82,9 @@ type ConnectResult struct {
 }
 
 type Session struct {
-	password proto.SessionPassword
-	connId   ConnectionId
+	password  proto.SessionPassword
+	connId    ConnectionId
+	nextCmdId CommandId
 }
 
 func NewStateMachine() *StateMachine {
@@ -145,8 +146,9 @@ func (sm *StateMachine) applyConnect(ctx *context, cmdBuf []byte) (*ConnectResul
 		}
 		sessionId = proto.SessionId(ctx.zxid)
 		session = &Session{
-			password: ctx.rand[:proto.SessionPasswordLen],
-			connId:   1,
+			password:  ctx.rand[:proto.SessionPasswordLen],
+			connId:    1,
+			nextCmdId: ctx.cmdId + 1,
 		}
 		sm.sessions[sessionId] = session
 	} else { // attach to existing session
@@ -162,6 +164,7 @@ func (sm *StateMachine) applyConnect(ctx *context, cmdBuf []byte) (*ConnectResul
 			return nil, proto.ErrSessionExpired
 		}
 		session.connId++
+		session.nextCmdId = ctx.cmdId + 1
 	}
 	return &ConnectResult{
 		proto.ConnectResponse{
@@ -234,7 +237,26 @@ func (sm *StateMachine) applyCommand(ctx *context, cmdBuf []byte) ([]byte, proto
 	return respBuf, proto.ErrOk
 }
 
-func (sm *StateMachine) gateOperation(ctx *context) proto.ErrCode {
+func (sm *StateMachine) gateCommand(ctx *context) proto.ErrCode {
+	session, ok := sm.sessions[ctx.sessionId]
+	if !ok {
+		log.Printf("Session %v not found", ctx.sessionId)
+		return proto.ErrSessionExpired
+	}
+	if ctx.connId != session.connId {
+		log.Printf("Expired connection ID %v for session %v", ctx.connId, ctx.sessionId)
+		return proto.ErrSessionMoved
+	}
+	if ctx.cmdId != session.nextCmdId {
+		log.Printf("Unexpected command ID %v for session %v (next is %v). Ignoring.",
+			ctx.cmdId, ctx.sessionId, session.nextCmdId)
+		return proto.ErrInvalidState
+	}
+	session.nextCmdId++
+	return proto.ErrOk
+}
+
+func (sm *StateMachine) gateQuery(ctx *context) proto.ErrCode {
 	session, ok := sm.sessions[ctx.sessionId]
 	if !ok {
 		log.Printf("Session %v not found", ctx.sessionId)
@@ -286,10 +308,10 @@ func (sm *StateMachine) Apply(entry *raft.Log) interface{} {
 		return result
 
 	case NoOpCommand:
-		return sm.gateOperation(ctx)
+		return sm.gateCommand(ctx)
 
 	case NormalCommand:
-		err := sm.gateOperation(ctx)
+		err := sm.gateCommand(ctx)
 		if err != proto.ErrOk {
 			return err
 		}
@@ -323,7 +345,7 @@ func (sm *StateMachine) Query(
 		cmdId:     0,
 	}
 
-	errCode := sm.gateOperation(ctx)
+	errCode := sm.gateQuery(ctx)
 	if errCode != proto.ErrOk {
 		return 0, nil, errCode
 	}
