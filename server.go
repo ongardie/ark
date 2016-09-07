@@ -48,6 +48,7 @@ func (s *Server) processConnect(rpc *ConnectRPC) {
 		CmdType:   statemachine.ConnectCommand,
 		SessionId: 0,
 		ConnId:    0,
+		CmdId:     1,
 		Time:      time.Now().Unix(),
 		Rand:      getRand(proto.SessionPasswordLen),
 	}
@@ -88,6 +89,7 @@ func (s *Server) processCommand(rpc *RPC) {
 		CmdType:   statemachine.NormalCommand,
 		SessionId: rpc.conn.SessionId(),
 		ConnId:    rpc.conn.ConnId(),
+		CmdId:     rpc.cmdId,
 		Time:      time.Now().Unix(),
 		Rand:      getRand(proto.SessionPasswordLen),
 	}

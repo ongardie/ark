@@ -44,6 +44,7 @@ type context struct {
 	rand      []byte
 	sessionId proto.SessionId
 	connId    ConnectionId
+	cmdId     CommandId
 }
 
 type CommandType int32
@@ -59,6 +60,7 @@ type CommandHeader1 struct {
 	CmdType   CommandType
 	SessionId proto.SessionId
 	ConnId    ConnectionId
+	CmdId     CommandId
 	Time      int64
 	Rand      []byte
 }
@@ -72,6 +74,7 @@ type NotifyEvents []TreeEvent
 type RegisterEvents []TreeEvent
 
 type ConnectionId int64
+type CommandId int64
 
 type ConnectResult struct {
 	Resp   proto.ConnectResponse
@@ -271,6 +274,7 @@ func (sm *StateMachine) Apply(entry *raft.Log) interface{} {
 		rand:      header.Rand,
 		sessionId: header.SessionId,
 		connId:    header.ConnId,
+		cmdId:     header.CmdId,
 	}
 
 	switch header.CmdType {
@@ -316,6 +320,7 @@ func (sm *StateMachine) Query(
 		time:      time.Now().Unix(),
 		sessionId: conn.SessionId(),
 		connId:    conn.ConnId(),
+		cmdId:     0,
 	}
 
 	errCode := sm.gateOperation(ctx)

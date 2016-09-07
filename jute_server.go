@@ -57,6 +57,7 @@ type JuteConnection struct {
 	closeCh   chan struct{}
 	sessionId proto.SessionId
 	connId    statemachine.ConnectionId
+	nextCmdId statemachine.CommandId
 }
 
 func (conn *JuteConnection) String() string {
@@ -308,6 +309,7 @@ func (conn *JuteConnection) processConnReq(reqBuf []byte) error {
 			}
 			conn.sessionId = resp.SessionID
 			conn.connId = connId
+			conn.nextCmdId = 2
 			conn.sendQueue.Push(buf)
 		},
 	})
@@ -332,7 +334,13 @@ func (conn *JuteConnection) process(msg []byte) error {
 		rpc.opName = fmt.Sprintf("unknown (%v)", rpc.reqHeader.OpCode)
 	}
 
-	log.Printf("Received %v", rpc.reqHeader.OpCode)
+	log.Printf("Received %v", rpc.opName)
+	if isReadOnly(rpc.reqHeader.OpCode) {
+		rpc.cmdId = 0
+	} else {
+		rpc.cmdId = conn.nextCmdId
+		conn.nextCmdId++
+	}
 
 	respHeader := proto.ResponseHeader{
 		Xid:  rpc.reqHeader.Xid,
