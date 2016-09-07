@@ -46,15 +46,13 @@ func (q *InfiniteQueue) Pop() []byte {
 	return nil
 }
 
-type Received struct {
-	conn      *JuteConnection
-	msg       []byte
-	isConnReq bool
+type JuteServer struct {
+	handler func(RPCish)
 }
 
 type JuteConnection struct {
+	server    *JuteServer
 	netConn   net.Conn
-	received  chan<- Received
 	sendQueue *InfiniteQueue
 	closeCh   chan struct{}
 	sessionId proto.SessionId
@@ -108,11 +106,11 @@ func (conn *JuteConnection) handshake() {
 		return
 	}
 
-	// Queue it for processing
-	select {
-	case conn.received <- Received{conn: conn, msg: req, isConnReq: true}:
-	case <-conn.closeCh:
-		conn.closeCh <- struct{}{}
+	// Start to process it
+	err = conn.processConnReq(req)
+	if err != nil {
+		log.Printf("connection encountered error: %v", err)
+		conn.Close()
 		return
 	}
 
@@ -198,10 +196,10 @@ func (conn *JuteConnection) receiveLoop() {
 			conn.Close()
 			return
 		}
-		select {
-		case conn.received <- Received{conn: conn, msg: req, isConnReq: false}:
-		case <-conn.closeCh:
-			conn.closeCh <- struct{}{}
+		err = conn.process(req)
+		if err != nil {
+			log.Printf("connection encountered error: %v", err)
+			conn.Close()
 			return
 		}
 	}
@@ -244,20 +242,6 @@ func (conn *JuteConnection) sendLoop() {
 	}
 }
 
-type JuteServer struct {
-	received chan Received
-	rpcChan  chan<- RPCish
-}
-
-func NewJuteServer(rpcChan chan<- RPCish) *JuteServer {
-	s := &JuteServer{
-		received: make(chan Received),
-		rpcChan:  rpcChan,
-	}
-	go s.receive()
-	return s
-}
-
 func (s *JuteServer) Listen(addr string) error {
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -280,41 +264,41 @@ func (s *JuteServer) acceptLoop(listener net.Listener) {
 
 func (s *JuteServer) newConnection(netConn net.Conn) {
 	conn := &JuteConnection{
+		server:    s,
 		netConn:   netConn,
-		received:  s.received,
 		sendQueue: NewInfiniteQueue(),
 		closeCh:   make(chan struct{}, 1),
 	}
 	go conn.handshake()
 }
 
-func (s *JuteServer) processConnReq(received Received) error {
+func (conn *JuteConnection) processConnReq(reqBuf []byte) error {
 	req := &proto.ConnectRequest{}
-	buf, err := jute.DecodeSome(received.msg, req)
+	more, err := jute.DecodeSome(reqBuf, req)
 	if err != nil {
 		return fmt.Errorf("error reading ConnectRequest: %v", err)
 	}
 	sendReadOnlyByte := false
-	if len(buf) == 1 {
+	if len(more) == 1 {
 		// Modern ZK clients send 1 more byte to indicate whether they support
 		// read-only mode. We ignore it but send a 0 byte back.
 		sendReadOnlyByte = true
-	} else if len(buf) > 1 {
-		return fmt.Errorf("unexpected bytes after ConnectRequest: %#v", buf)
+	} else if len(more) > 1 {
+		return fmt.Errorf("unexpected bytes after ConnectRequest: %#v", more)
 	}
 	log.Printf("connection request: %#v", req)
-	s.rpcChan <- &ConnectRPC{
-		conn:    received.conn,
+	conn.server.handler(&ConnectRPC{
+		conn:    conn,
 		req:     req,
-		reqJute: received.msg[:len(received.msg)-len(buf)],
+		reqJute: reqBuf[:len(reqBuf)-len(more)],
 		errReply: func(errCode proto.ErrCode) {
 			// TODO: what am I supposed to do with this?
 			log.Printf("Can't satisfy connection request (%v), dropping", errCode.Error())
-			received.conn.Close()
+			conn.Close()
 		},
 		reply: func(resp *proto.ConnectResponse, connId statemachine.ConnectionId) {
 			log.Printf("Replying to connection request with %#v", resp)
-			buf, err = received.conn.Encode(resp)
+			buf, err := conn.Encode(resp)
 			if err != nil {
 				log.Printf("Error serializing ConnectResponse: %v", err)
 				return
@@ -322,27 +306,24 @@ func (s *JuteServer) processConnReq(received Received) error {
 			if sendReadOnlyByte {
 				buf = append(buf, 0)
 			}
-			received.conn.sessionId = resp.SessionID
-			received.conn.connId = connId
-			received.conn.sendQueue.Push(buf)
+			conn.sessionId = resp.SessionID
+			conn.connId = connId
+			conn.sendQueue.Push(buf)
 		},
-	}
+	})
 	return nil
 }
 
-func (s *JuteServer) process(received Received) error {
-	if received.isConnReq {
-		return s.processConnReq(received)
-	}
+func (conn *JuteConnection) process(msg []byte) error {
 	rpc := &RPC{
-		conn: received.conn,
+		conn: conn,
 	}
 
-	more, err := received.conn.DecodeSome(received.msg, &rpc.reqHeader)
+	more, err := conn.DecodeSome(msg, &rpc.reqHeader)
 	if err != nil {
 		return fmt.Errorf("error reading request header: %v", err)
 	}
-	rpc.reqHeaderJute = received.msg[:len(received.msg)-len(more)]
+	rpc.reqHeaderJute = msg[:len(msg)-len(more)]
 	rpc.req = more
 
 	if name, ok := proto.OpNames[rpc.reqHeader.OpCode]; ok {
@@ -350,6 +331,8 @@ func (s *JuteServer) process(received Received) error {
 	} else {
 		rpc.opName = fmt.Sprintf("unknown (%v)", rpc.reqHeader.OpCode)
 	}
+
+	log.Printf("Received %v", rpc.reqHeader.OpCode)
 
 	respHeader := proto.ResponseHeader{
 		Xid:  rpc.reqHeader.Xid,
@@ -360,34 +343,23 @@ func (s *JuteServer) process(received Received) error {
 	rpc.errReply = func(errCode proto.ErrCode) {
 		respHeader.Err = errCode
 		log.Printf("Replying with error header to %v: %+v", rpc.opName, respHeader)
-		buf, err := received.conn.Encode(&respHeader)
+		buf, err := conn.Encode(&respHeader)
 		if err != nil {
 			log.Printf("Error encoding response header to %v: %v", rpc.opName, err)
 			return
 		}
-		received.conn.sendQueue.Push(buf)
+		conn.sendQueue.Push(buf)
 	}
 
 	rpc.reply = func(zxid proto.ZXID, msgBuf []byte) {
-		headerBuf, err := received.conn.Encode(&respHeader)
+		headerBuf, err := conn.Encode(&respHeader)
 		if err != nil {
 			log.Printf("Error encoding response header to %v: %v", rpc.opName, err)
 			return
 		}
-		received.conn.sendQueue.Push(append(headerBuf, msgBuf...))
+		conn.sendQueue.Push(append(headerBuf, msgBuf...))
 	}
 
-	s.rpcChan <- rpc
+	conn.server.handler(rpc)
 	return nil
-}
-
-func (s *JuteServer) receive() {
-	for {
-		received := <-s.received
-		err := s.process(received)
-		if err != nil {
-			log.Printf("connection encountered error: %v", err)
-			received.conn.Close()
-		}
-	}
 }

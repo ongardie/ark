@@ -60,23 +60,26 @@ func (s *Server) processConnect(rpc *ConnectRPC) {
 	buf := append(append([]byte{1}, headerBuf...), rpc.reqJute...)
 
 	future := s.raft.handle.Apply(buf, 0)
-	err = future.Error()
-	if err != nil {
-		log.Printf("Failed to commit connect command: %v", err)
-		rpc.errReply(proto.ErrOperationTimeout) // TODO
-		return
-	}
-	result := future.Response()
-	log.Printf("Committed entry %v and output %+v", future.Index(), result)
 
-	switch result := result.(type) {
-	case proto.ErrCode:
-		rpc.errReply(result)
-	case *statemachine.ConnectResult:
-		rpc.reply(&result.Resp, result.ConnId)
-	default:
-		log.Fatalf("Unexpected output type for connect command: %T", result)
-	}
+	go func() {
+		err = future.Error()
+		if err != nil {
+			log.Printf("Failed to commit connect command: %v", err)
+			rpc.errReply(proto.ErrOperationTimeout) // TODO
+			return
+		}
+		result := future.Response()
+		log.Printf("Committed entry %v and output %+v", future.Index(), result)
+
+		switch result := result.(type) {
+		case proto.ErrCode:
+			rpc.errReply(result)
+		case *statemachine.ConnectResult:
+			rpc.reply(&result.Resp, result.ConnId)
+		default:
+			log.Fatalf("Unexpected output type for connect command: %T", result)
+		}
+	}()
 }
 
 func (s *Server) processCommand(rpc *RPC) {
@@ -99,35 +102,39 @@ func (s *Server) processCommand(rpc *RPC) {
 	buf = append(buf, rpc.reqHeaderJute...)
 	buf = append(buf, rpc.req...)
 	future := s.raft.handle.Apply(buf, 0)
-	err = future.Error()
-	if err != nil {
-		log.Printf("Failed to commit %v command: %v", rpc.opName, err)
-		rpc.errReply(proto.ErrOperationTimeout) // TODO
-		return
-	}
-	resp := future.Response()
-	log.Printf("Committed entry %v", future.Index())
+	go func() {
+		err = future.Error()
+		if err != nil {
+			log.Printf("Failed to commit %v command: %v", rpc.opName, err)
+			rpc.errReply(proto.ErrOperationTimeout) // TODO
+			return
+		}
+		resp := future.Response()
+		log.Printf("Committed entry %v", future.Index())
 
-	switch resp := resp.(type) {
-	case proto.ErrCode:
-		rpc.errReply(resp)
-	case []byte:
-		rpc.reply(proto.ZXID(future.Index()), resp)
-	default:
-		log.Fatalf("Unexpected output type for %v command: %T (%#v)", rpc.opName, resp, resp)
-	}
+		switch resp := resp.(type) {
+		case proto.ErrCode:
+			rpc.errReply(resp)
+		case []byte:
+			rpc.reply(proto.ZXID(future.Index()), resp)
+		default:
+			log.Fatalf("Unexpected output type for %v command: %T (%#v)", rpc.opName, resp, resp)
+		}
+	}()
 }
 
 func (s *Server) processQuery(rpc *RPC) {
-	log.Printf("Processing %v query", rpc.opName)
-	zxid, resp, err := s.stateMachine.Query(rpc.conn,
-		proto.ZXID(0), // TODO: ensure client sees ZXID going forward
-		rpc.reqHeader.OpCode, rpc.req)
-	if err == proto.ErrOk {
-		rpc.reply(zxid, resp)
-	} else {
-		rpc.errReply(err)
-	}
+	go func() {
+		log.Printf("Processing %v query", rpc.opName)
+		zxid, resp, err := s.stateMachine.Query(rpc.conn,
+			proto.ZXID(0), // TODO: ensure client sees ZXID going forward
+			rpc.reqHeader.OpCode, rpc.req)
+		if err == proto.ErrOk {
+			rpc.reply(zxid, resp)
+		} else {
+			rpc.errReply(err)
+		}
+	}()
 }
 
 func isReadOnly(opCode proto.OpCode) bool {
@@ -147,18 +154,15 @@ func isReadOnly(opCode proto.OpCode) bool {
 	}
 }
 
-func (s *Server) handler(rpcChan <-chan RPCish) {
-	for {
-		rpc := <-rpcChan
-		switch rpc := rpc.(type) {
-		case *ConnectRPC:
-			s.processConnect(rpc)
-		case *RPC:
-			if isReadOnly(rpc.reqHeader.OpCode) {
-				s.processQuery(rpc)
-			} else {
-				s.processCommand(rpc)
-			}
+func (s *Server) handler(rpc RPCish) {
+	switch rpc := rpc.(type) {
+	case *ConnectRPC:
+		s.processConnect(rpc)
+	case *RPC:
+		if isReadOnly(rpc.reqHeader.OpCode) {
+			s.processQuery(rpc)
+		} else {
+			s.processCommand(rpc)
 		}
 	}
 }
@@ -217,18 +221,13 @@ func (s *Server) startRaft() error {
 }
 
 func (s *Server) serve() error {
-	rpcChan := make(chan RPCish)
-
 	log.Print("listening for ZooKeeper clients on port 2181")
-	juteServer := NewJuteServer(rpcChan)
+	juteServer := &JuteServer{handler: s.handler}
 	err := juteServer.Listen(":2181")
 	if err != nil {
 		return fmt.Errorf("error listening: %v", err)
 	}
 
-	for i := 0; i < 32; i++ {
-		go s.handler(rpcChan)
-	}
 	select {} // block forever
 }
 
