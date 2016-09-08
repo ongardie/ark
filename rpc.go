@@ -28,6 +28,7 @@ type ConnectRPC struct {
 type RPC struct {
 	conn          statemachine.Connection
 	cmdId         statemachine.CommandId
+	lastCmdId     statemachine.CommandId
 	reqHeaderJute []byte
 	reqHeader     proto.RequestHeader
 	opName        string

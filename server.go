@@ -126,15 +126,17 @@ func (s *Server) processCommand(rpc *RPC) {
 }
 
 func (s *Server) processQuery(rpc *RPC) {
+	log.Printf("Processing %v query", rpc.opName)
+	queryCh := s.stateMachine.Query(rpc.conn,
+		rpc.lastCmdId,
+		rpc.reqHeader.OpCode, rpc.req)
 	go func() {
-		log.Printf("Processing %v query", rpc.opName)
-		zxid, resp, err := s.stateMachine.Query(rpc.conn,
-			proto.ZXID(0), // TODO: ensure client sees ZXID going forward
-			rpc.reqHeader.OpCode, rpc.req)
-		if err == proto.ErrOk {
-			rpc.reply(zxid, resp)
+		result := <-queryCh
+		log.Printf("Got result for %v query", rpc.opName)
+		if result.ErrCode == proto.ErrOk {
+			rpc.reply(result.Zxid, result.Output)
 		} else {
-			rpc.errReply(err)
+			rpc.errReply(result.ErrCode)
 		}
 	}()
 }

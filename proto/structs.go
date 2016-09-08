@@ -180,7 +180,7 @@ type closeResponse struct{}
 
 type ConnectRequest struct {
 	ProtocolVersion int32
-	LastZxidSeen    int64
+	LastZxidSeen    ZXID
 	TimeOut         int32
 	SessionID       SessionId
 	Passwd          SessionPassword
@@ -280,7 +280,7 @@ type setSaslResponse struct {
 }
 
 type SetWatchesRequest struct {
-	RelativeZxid int64
+	RelativeZxid ZXID
 	DataWatches  []string
 	ExistWatches []string
 	ChildWatches []string
