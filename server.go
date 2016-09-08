@@ -7,6 +7,7 @@ package main
 
 import (
 	cryptoRand "crypto/rand"
+	"flag"
 	"fmt"
 	"log"
 	"net"
@@ -22,6 +23,14 @@ import (
 )
 
 type Server struct {
+	options struct {
+		bootstrap     bool
+		serverId      uint64
+		storeDir      string
+		peerAddress   string
+		clientAddress string
+		adminAddress  string
+	}
 	stateMachine *statemachine.StateMachine
 	raft         struct {
 		settings    *raft.Config
@@ -173,46 +182,53 @@ func (s *Server) handler(rpc RPCish) {
 
 func (s *Server) startRaft() error {
 	s.raft.settings = raft.DefaultConfig()
-	s.raft.settings.LocalID = "server0"
+	s.raft.settings.LocalID = raft.ServerID(fmt.Sprintf("server%v", s.options.serverId))
 
-	store, err := raftboltdb.NewBoltStore("store.bolt")
+	err := os.MkdirAll(s.options.storeDir, os.ModeDir|0755)
+	if err != nil {
+		return fmt.Errorf("Unable to create store directory %v: %v\n",
+			s.options.storeDir, err)
+	}
+
+	store, err := raftboltdb.NewBoltStore(s.options.storeDir + "/store.bolt")
 	if err != nil {
 		return fmt.Errorf("Unable to initialize bolt store %v\n", err)
 	}
 	s.raft.stableStore = store
 	s.raft.logStore = store
 
-	s.raft.snapStore, err = raft.NewFileSnapshotStoreWithLogger("snapshot", 1, nil)
+	s.raft.snapStore, err = raft.NewFileSnapshotStoreWithLogger(s.options.storeDir, 1, nil)
 	if err != nil {
 		return fmt.Errorf("Unable to initialize snapshot store %v\n", err)
 	}
 
-	configuration := raft.Configuration{
-		Servers: []raft.Server{
-			raft.Server{
-				Suffrage: raft.Voter,
-				ID:       s.raft.settings.LocalID,
-				Address:  "127.0.0.1:2180",
-			},
-		},
-	}
-
-	err = raft.BootstrapCluster(s.raft.settings,
-		s.raft.logStore, s.raft.stableStore, s.raft.snapStore,
-		configuration)
+	addr, err := net.ResolveTCPAddr("tcp", s.options.peerAddress)
 	if err != nil {
-		return fmt.Errorf("Unable to bootstrap Raft server: %v\n", err)
+		return fmt.Errorf("Unable to resolve %v: %v\n", s.options.peerAddress, err)
 	}
-
 	s.raft.transport, err = raft.NewTCPTransportWithLogger(
-		"127.0.0.1:2180",
-		&net.TCPAddr{
-			IP:   []byte{127, 0, 0, 1},
-			Port: 2180,
-		},
-		4, time.Second, nil)
+		s.options.peerAddress, addr, 4, time.Second, nil)
 	if err != nil {
 		return fmt.Errorf("Unable to start Raft transport: %v\n", err)
+	}
+
+	if s.options.bootstrap {
+		configuration := raft.Configuration{
+			Servers: []raft.Server{
+				raft.Server{
+					Suffrage: raft.Voter,
+					ID:       s.raft.settings.LocalID,
+					Address:  raft.ServerAddress(s.options.peerAddress),
+				},
+			},
+		}
+
+		err = raft.BootstrapCluster(s.raft.settings,
+			s.raft.logStore, s.raft.stableStore, s.raft.snapStore,
+			configuration)
+		if err != nil {
+			return fmt.Errorf("Unable to bootstrap Raft server: %v\n", err)
+		}
 	}
 
 	s.raft.handle, err = raft.NewRaft(s.raft.settings, s.stateMachine,
@@ -225,9 +241,9 @@ func (s *Server) startRaft() error {
 }
 
 func (s *Server) serve() error {
-	log.Print("listening for ZooKeeper clients on port 2181")
+	log.Printf("listening for ZooKeeper clients on %v", s.options.clientAddress)
 	juteServer := &JuteServer{handler: s.handler}
-	err := juteServer.Listen(":2181")
+	err := juteServer.Listen(s.options.clientAddress)
 	if err != nil {
 		return fmt.Errorf("error listening: %v", err)
 	}
@@ -236,9 +252,39 @@ func (s *Server) serve() error {
 }
 
 func main() {
-	s := &Server{
-		stateMachine: statemachine.NewStateMachine(),
+	s := &Server{}
+
+	flags := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	flags.BoolVar(&s.options.bootstrap, "bootstrap", false,
+		"start a new cluster containing just this server")
+	flags.Uint64Var(&s.options.serverId, "id", 0,
+		"local Server ID (must be unique across Raft cluster; required)")
+	flags.StringVar(&s.options.peerAddress, "peeraddr", "",
+		"local address given to other servers (required)")
+	flags.StringVar(&s.options.clientAddress, "clientaddr", "0:2181",
+		"local address on which to listen for client requests")
+	flags.StringVar(&s.options.adminAddress, "adminaddr", "0:2182",
+		"local address on which to listen for management requests")
+	flags.StringVar(&s.options.storeDir, "store", "store",
+		"directory to store Raft log and snapshots")
+	flags.Parse(os.Args[1:])
+
+	if s.options.serverId == 0 {
+		log.Printf("Error: -id is required")
+		flags.PrintDefaults()
+		os.Exit(2)
 	}
+	if s.options.peerAddress == "" {
+		log.Printf("Error: -peeraddr is required")
+		flags.PrintDefaults()
+		os.Exit(2)
+	}
+
+	s.options.storeDir = fmt.Sprintf("%s/server%v",
+		s.options.storeDir, s.options.serverId)
+
+	s.stateMachine = statemachine.NewStateMachine()
+
 	err := s.startRaft()
 	if err != nil {
 		log.Printf("error starting Raft: %v", err)
