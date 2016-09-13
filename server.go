@@ -182,7 +182,12 @@ func (s *Server) handler(rpc RPCish) {
 	}
 }
 
-func (s *Server) startRaft() error {
+const (
+	RAFT_PROTO          byte = 10
+	ZOOLATER_PEER_PROTO byte = 11
+)
+
+func (s *Server) startRaft(streamLayer raft.StreamLayer) error {
 	s.raft.settings = raft.DefaultConfig()
 	s.raft.settings.LocalID = raft.ServerID(fmt.Sprintf("server%v", s.options.serverId))
 
@@ -204,15 +209,7 @@ func (s *Server) startRaft() error {
 		return fmt.Errorf("Unable to initialize snapshot store %v\n", err)
 	}
 
-	addr, err := net.ResolveTCPAddr("tcp", s.options.peerAddress)
-	if err != nil {
-		return fmt.Errorf("Unable to resolve %v: %v\n", s.options.peerAddress, err)
-	}
-	s.raft.transport, err = raft.NewTCPTransportWithLogger(
-		s.options.peerAddress, addr, 4, time.Second, nil)
-	if err != nil {
-		return fmt.Errorf("Unable to start Raft transport: %v\n", err)
-	}
+	s.raft.transport = raft.NewNetworkTransportWithLogger(streamLayer, 4, time.Second, nil)
 
 	if s.options.bootstrap {
 		configuration := raft.Configuration{
@@ -349,7 +346,19 @@ func main() {
 
 	s.stateMachine = statemachine.NewStateMachine()
 
-	err := s.startRaft()
+	addr, err := net.ResolveTCPAddr("tcp", s.options.peerAddress)
+	if err != nil {
+		log.Printf("Unable to resolve %v: %v\n", s.options.peerAddress, err)
+		os.Exit(1)
+	}
+	stream, err := NewTCPTransport(s.options.peerAddress, addr)
+	if err != nil {
+		log.Printf("Unable to start peer transport: %v\n", err)
+		os.Exit(1)
+	}
+	streamLayers := NewDemuxStreamLayer(stream, RAFT_PROTO, ZOOLATER_PEER_PROTO)
+
+	err = s.startRaft(streamLayers[RAFT_PROTO])
 	if err != nil {
 		log.Printf("error starting Raft: %v", err)
 		os.Exit(1)
