@@ -7,10 +7,12 @@ package main
 
 import (
 	cryptoRand "crypto/rand"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"time"
 
@@ -229,6 +231,8 @@ func (s *Server) startRaft() error {
 		if err != nil {
 			return fmt.Errorf("Unable to bootstrap Raft server: %v\n", err)
 		}
+
+		os.Exit(0)
 	}
 
 	s.raft.handle, err = raft.NewRaft(s.raft.settings, s.stateMachine,
@@ -240,7 +244,67 @@ func (s *Server) startRaft() error {
 	return nil
 }
 
+type addVoterRequest struct {
+	ServerId  raft.ServerID
+	Address   raft.ServerAddress
+	PrevIndex uint64
+}
+
 func (s *Server) serve() error {
+	log.Printf("listening for admin requests on %v", s.options.adminAddress)
+	adminMux := http.NewServeMux()
+	adminMux.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path != "/" {
+			http.NotFound(w, req)
+			return
+		}
+		fmt.Fprintf(w, "admin http server")
+	})
+	adminMux.HandleFunc("/raft/stats", func(w http.ResponseWriter, req *http.Request) {
+		for k, v := range s.raft.handle.Stats() {
+			fmt.Fprintf(w, "%v: %v\n", k, v)
+		}
+	})
+	adminMux.HandleFunc("/raft/membership", func(w http.ResponseWriter, req *http.Request) {
+		configuration, index, err := s.raft.handle.GetConfiguration()
+		if err != nil {
+			fmt.Fprintf(w, "error: %v", err)
+			return
+		}
+		fmt.Fprintf(w, "index: %v, configuration: %+v", index, configuration)
+	})
+	adminMux.HandleFunc("/api/raft/addvoter", func(w http.ResponseWriter, req *http.Request) {
+		if req.Method == "POST" {
+			decoder := json.NewDecoder(req.Body)
+			args := addVoterRequest{}
+			err := decoder.Decode(&args)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Error decoding JSON: %v", err), http.StatusBadRequest)
+				return
+			}
+			log.Printf("AddVoter %+v\n", args)
+			future := s.raft.handle.AddVoter(
+				args.ServerId,
+				args.Address,
+				args.PrevIndex,
+				time.Second*5)
+			err = future.Error()
+			if err != nil {
+				http.Error(w, fmt.Sprintf("AddVoter error: %v", err), http.StatusInternalServerError)
+				return
+			}
+			fmt.Fprintf(w, "AddVoter succeeded")
+		} else {
+			http.NotFound(w, req)
+			return
+		}
+	})
+	adminServer := &http.Server{
+		Addr:    s.options.adminAddress,
+		Handler: adminMux,
+	}
+	go func() { log.Fatal(adminServer.ListenAndServe()) }()
+
 	log.Printf("listening for ZooKeeper clients on %v", s.options.clientAddress)
 	juteServer := &JuteServer{handler: s.handler}
 	err := juteServer.Listen(s.options.clientAddress)
@@ -256,7 +320,7 @@ func main() {
 
 	flags := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	flags.BoolVar(&s.options.bootstrap, "bootstrap", false,
-		"start a new cluster containing just this server")
+		"initialize a new cluster containing just this server and immediately exit")
 	flags.Uint64Var(&s.options.serverId, "id", 0,
 		"local Server ID (must be unique across Raft cluster; required)")
 	flags.StringVar(&s.options.peerAddress, "peeraddr", "",
