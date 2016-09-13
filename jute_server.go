@@ -100,7 +100,7 @@ func (conn *JuteConnection) Notify(zxid proto.ZXID, event statemachine.TreeEvent
 
 func (conn *JuteConnection) handshake() {
 	// Receive connection request from the client
-	req, err := conn.receive()
+	req, err := receiveFrame(conn.netConn)
 	if err != nil {
 		log.Printf("Error receiving connection request (%v), closing connection", err)
 		conn.Close()
@@ -122,7 +122,7 @@ func (conn *JuteConnection) handshake() {
 	}
 
 	// Send it back to the client
-	err = conn.send(msg)
+	err = sendFrame(conn.netConn, msg)
 	if err != nil {
 		log.Printf("Error sending connection response (%v), closing connection", err)
 		conn.Close()
@@ -172,17 +172,17 @@ func (conn *JuteConnection) Close() {
 	}
 }
 
-func (conn *JuteConnection) receive() ([]byte, error) {
+func receiveFrame(conn net.Conn) ([]byte, error) {
 	log.Printf("Waiting for incoming message")
 	buf := make([]byte, 4)
-	n, err := io.ReadFull(conn.netConn, buf)
+	n, err := io.ReadFull(conn, buf)
 	if err != nil {
 		return nil, err
 	}
 	bytes := binary.BigEndian.Uint32(buf[:n])
 	log.Printf("Expecting %v bytes", bytes)
 	buf = make([]byte, bytes)
-	_, err = io.ReadFull(conn.netConn, buf)
+	_, err = io.ReadFull(conn, buf)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +191,7 @@ func (conn *JuteConnection) receive() ([]byte, error) {
 
 func (conn *JuteConnection) receiveLoop() {
 	for {
-		req, err := conn.receive()
+		req, err := receiveFrame(conn.netConn)
 		if err != nil {
 			log.Printf("Error receiving message (%v), closing connection", err)
 			conn.Close()
@@ -206,11 +206,11 @@ func (conn *JuteConnection) receiveLoop() {
 	}
 }
 
-func (conn *JuteConnection) send(msg []byte) error {
+func sendFrame(conn net.Conn, msg []byte) error {
 	buf := make([]byte, 4)
 	binary.BigEndian.PutUint32(buf, uint32(len(msg)))
 	buf = append(buf, msg...)
-	_, err := conn.netConn.Write(buf)
+	_, err := conn.Write(buf)
 	return err
 }
 
@@ -234,7 +234,7 @@ func (conn *JuteConnection) sendLoop() {
 		if msg == nil {
 			return
 		}
-		err := conn.send(msg)
+		err := sendFrame(conn.netConn, msg)
 		if err != nil {
 			log.Printf("Error sending message (%v), closing connection", err)
 			conn.Close()

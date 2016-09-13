@@ -6,8 +6,8 @@
 package main
 
 import (
-	"errors"
-	"fmt"
+	"io"
+	"log"
 	"net"
 	"sync"
 	"time"
@@ -24,7 +24,7 @@ type demuxStreamLayer struct {
 type demuxTarget struct {
 	discriminator byte
 	stream        *demuxStreamLayer
-	queue         []net.Conn
+	queue         chan net.Conn
 }
 
 func NewDemuxStreamLayer(real raft.StreamLayer, first byte, discriminators ...byte) map[byte]raft.StreamLayer {
@@ -37,50 +37,72 @@ func NewDemuxStreamLayer(real raft.StreamLayer, first byte, discriminators ...by
 		target := &demuxTarget{
 			discriminator: dis,
 			stream:        stream,
+			queue:         make(chan net.Conn, 5),
 		}
 		stream.targets[dis] = target
 		ret[dis] = target
 	}
+	go stream.acceptLoop()
 	return ret
 }
 
-func (target *demuxTarget) Accept() (net.Conn, error) {
-	target.stream.mutex.Lock()
-	defer target.stream.mutex.Unlock()
-	for len(target.queue) == 0 {
-		conn, err := target.stream.real.Accept()
+func (stream *demuxStreamLayer) acceptLoop() {
+	for {
+		conn, err := stream.real.Accept()
 		if err != nil {
-			return nil, err
+			log.Printf("Error accepting connection: %v", err)
+			continue
 		}
-		buf := []byte{0}
-		n, err := conn.Read(buf)
-		if err != nil {
-			conn.Close()
-			return nil, err
-		}
-		if n == 0 {
-			conn.Close()
-			return nil, errors.New("Could not read first byte from connection")
-		}
-		discriminator := buf[0]
-		other, ok := target.stream.targets[discriminator]
-		if !ok {
-			conn.Close()
-			return nil, errors.New("Got connection for unknown target")
-		}
-		if len(other.queue) >= 5 {
-			conn.Close()
-			return nil, fmt.Errorf("Got connection for target %v with full queue", discriminator)
-		}
-		other.queue = append(other.queue, conn)
+		go stream.handle(conn)
 	}
-	conn := target.queue[0]
-	target.queue = target.queue[1:]
+}
+
+func (stream *demuxStreamLayer) handle(conn net.Conn) {
+	buf := []byte{0}
+	_, err := io.ReadFull(conn, buf)
+	if err != nil {
+		log.Printf("Error reading discriminator byte: %v", err)
+		conn.Close()
+		return
+	}
+	stream.enqueue(buf[0], conn)
+}
+
+func (stream *demuxStreamLayer) enqueue(discriminator byte, conn net.Conn) {
+	stream.mutex.Lock()
+	defer stream.mutex.Unlock()
+	target, ok := stream.targets[discriminator]
+	if !ok {
+		conn.Close()
+		log.Printf("Got connection for unknown target")
+		return
+	}
+	select {
+	case target.queue <- conn:
+		log.Printf("Queued connection for target %v", discriminator)
+	default:
+		conn.Close()
+		log.Printf("Got connection for target %v with full queue", discriminator)
+	}
+}
+
+func (target *demuxTarget) Accept() (net.Conn, error) {
+	conn := <-target.queue
+	log.Printf("Returning connection for target %v", target.discriminator)
 	return conn, nil
 }
 
 func (target *demuxTarget) Close() error {
 	target.stream.mutex.Lock()
+	draining := true
+	for draining {
+		select {
+		case conn := <-target.queue:
+			conn.Close()
+		default:
+			draining = false
+		}
+	}
 	delete(target.stream.targets, target.discriminator)
 	close := (len(target.stream.targets) == 0)
 	target.stream.mutex.Unlock()

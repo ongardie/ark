@@ -42,6 +42,7 @@ type Server struct {
 		transport   raft.Transport
 		handle      *raft.Raft
 	}
+	leaderProxy *leaderProxy
 }
 
 func getRand(n int) []byte {
@@ -72,21 +73,20 @@ func (s *Server) processConnect(rpc *ConnectRPC) {
 	buf := append(append([]byte{1}, headerBuf...), rpc.reqJute...)
 
 	resultCh := s.stateMachine.ExpectConnect(header.Rand)
-	future := s.raft.handle.Apply(buf, 0)
+	errCh := s.leaderProxy.Apply(buf)
 	go func() {
-		err = future.Error()
-		if err != nil {
+		select {
+		case result := <-resultCh:
+			log.Printf("Committed connect request with output %+v", result)
+			if result.ErrCode != proto.ErrOk {
+				rpc.errReply(result.ErrCode)
+			} else {
+				rpc.reply(result.Resp, result.ConnId)
+			}
+		case err := <-errCh:
 			log.Printf("Failed to commit connect command: %v", err)
 			rpc.errReply(proto.ErrOperationTimeout) // TODO
 			s.stateMachine.CancelConnectResult(header.Rand)
-			return
-		}
-		result := <-resultCh
-		log.Printf("Committed connect request with output %+v", result)
-		if result.ErrCode != proto.ErrOk {
-			rpc.errReply(result.ErrCode)
-		} else {
-			rpc.reply(result.Resp, result.ConnId)
 		}
 	}()
 }
@@ -113,21 +113,20 @@ func (s *Server) processCommand(rpc *RPC) {
 	buf = append(buf, rpc.req...)
 
 	resultCh := s.stateMachine.ExpectCommand(header.SessionId, header.ConnId, header.CmdId)
-	future := s.raft.handle.Apply(buf, 0)
+	errCh := s.leaderProxy.Apply(buf)
 	go func() {
-		err = future.Error()
-		if err != nil {
+		select {
+		case result := <-resultCh:
+			log.Printf("Committed entry %v", result.Index)
+			if result.ErrCode == proto.ErrOk {
+				rpc.reply(result.Index, result.Output)
+			} else {
+				rpc.errReply(result.ErrCode)
+			}
+		case err := <-errCh:
 			log.Printf("Failed to commit %v command: %v", rpc.opName, err)
 			rpc.errReply(proto.ErrOperationTimeout) // TODO
 			s.stateMachine.CancelCommandResult(header.SessionId, header.ConnId, header.CmdId)
-			return
-		}
-		result := <-resultCh
-		log.Printf("Committed entry %v", result.Index)
-		if result.ErrCode == proto.ErrOk {
-			rpc.reply(result.Index, result.Output)
-		} else {
-			rpc.errReply(result.ErrCode)
 		}
 	}()
 }
@@ -369,6 +368,8 @@ func main() {
 		log.Printf("error starting Raft: %v", err)
 		os.Exit(1)
 	}
+
+	s.leaderProxy = newLeaderProxy(s.raft.handle, streamLayers[ZOOLATER_PEER_PROTO])
 
 	err = s.serve()
 	if err != nil {
