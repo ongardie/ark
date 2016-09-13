@@ -71,25 +71,22 @@ func (s *Server) processConnect(rpc *ConnectRPC) {
 	}
 	buf := append(append([]byte{1}, headerBuf...), rpc.reqJute...)
 
+	resultCh := s.stateMachine.ExpectConnect(header.Rand)
 	future := s.raft.handle.Apply(buf, 0)
-
 	go func() {
 		err = future.Error()
 		if err != nil {
 			log.Printf("Failed to commit connect command: %v", err)
 			rpc.errReply(proto.ErrOperationTimeout) // TODO
+			s.stateMachine.CancelConnectResult(header.Rand)
 			return
 		}
-		result := future.Response()
-		log.Printf("Committed entry %v and output %+v", future.Index(), result)
-
-		switch result := result.(type) {
-		case proto.ErrCode:
-			rpc.errReply(result)
-		case *statemachine.ConnectResult:
-			rpc.reply(&result.Resp, result.ConnId)
-		default:
-			log.Fatalf("Unexpected output type for connect command: %T", result)
+		result := <-resultCh
+		log.Printf("Committed connect request with output %+v", result)
+		if result.ErrCode != proto.ErrOk {
+			rpc.errReply(result.ErrCode)
+		} else {
+			rpc.reply(result.Resp, result.ConnId)
 		}
 	}()
 }
@@ -114,26 +111,31 @@ func (s *Server) processCommand(rpc *RPC) {
 	buf = append(buf, headerBuf...)
 	buf = append(buf, rpc.reqHeaderJute...)
 	buf = append(buf, rpc.req...)
+
+	resultCh := s.stateMachine.ExpectCommand(header.SessionId, header.ConnId, header.CmdId)
 	future := s.raft.handle.Apply(buf, 0)
 	go func() {
 		err = future.Error()
 		if err != nil {
 			log.Printf("Failed to commit %v command: %v", rpc.opName, err)
 			rpc.errReply(proto.ErrOperationTimeout) // TODO
+			s.stateMachine.CancelCommandResult(header.SessionId, header.ConnId, header.CmdId)
 			return
 		}
-		resp := future.Response()
-		log.Printf("Committed entry %v", future.Index())
-
-		switch resp := resp.(type) {
-		case proto.ErrCode:
-			rpc.errReply(resp)
-		case []byte:
-			rpc.reply(proto.ZXID(future.Index()), resp)
-		default:
-			log.Fatalf("Unexpected output type for %v command: %T (%#v)", rpc.opName, resp, resp)
+		result := <-resultCh
+		log.Printf("Committed entry %v", result.Index)
+		if result.ErrCode == proto.ErrOk {
+			rpc.reply(result.Index, result.Output)
+		} else {
+			rpc.errReply(result.ErrCode)
 		}
 	}()
+}
+
+func (s *Server) processPing(rpc *RPC) {
+	log.Printf("Processing ping")
+	s.stateMachine.Ping(rpc.conn)
+	rpc.reply(0, []byte{})
 }
 
 func (s *Server) processQuery(rpc *RPC) {
@@ -164,6 +166,8 @@ func isReadOnly(opCode proto.OpCode) bool {
 		return true
 	case proto.OpGetData:
 		return true
+	case proto.OpPing:
+		return true
 	default:
 		return false
 	}
@@ -174,7 +178,9 @@ func (s *Server) handler(rpc RPCish) {
 	case *ConnectRPC:
 		s.processConnect(rpc)
 	case *RPC:
-		if isReadOnly(rpc.reqHeader.OpCode) {
+		if rpc.reqHeader.OpCode == proto.OpPing {
+			s.processPing(rpc)
+		} else if isReadOnly(rpc.reqHeader.OpCode) {
 			s.processQuery(rpc)
 		} else {
 			s.processCommand(rpc)

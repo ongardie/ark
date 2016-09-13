@@ -21,11 +21,25 @@ import (
 )
 
 type StateMachine struct {
-	mutex       sync.Mutex
-	lastApplied proto.ZXID
-	tree        *Tree
-	sessions    map[proto.SessionId]*Session
-	watches     map[TreeEvent]Connections
+	mutex         sync.Mutex
+	lastApplied   proto.ZXID
+	tree          *Tree
+	sessions      map[proto.SessionId]*Session
+	watches       map[TreeEvent]Connections
+	output        map[fullCommandId]chan<- CommandResult
+	connectOutput map[string]chan<- ConnectResult
+}
+
+type fullCommandId struct {
+	session    proto.SessionId
+	connection ConnectionId
+	cmd        CommandId
+}
+
+type CommandResult struct {
+	Index   proto.ZXID
+	Output  []byte
+	ErrCode proto.ErrCode
 }
 
 type Connection interface {
@@ -77,8 +91,9 @@ type ConnectionId int64
 type CommandId int64
 
 type ConnectResult struct {
-	Resp   proto.ConnectResponse
-	ConnId ConnectionId
+	Resp    *proto.ConnectResponse
+	ConnId  ConnectionId
+	ErrCode proto.ErrCode
 }
 
 type Session struct {
@@ -90,10 +105,12 @@ type Session struct {
 
 func NewStateMachine() *StateMachine {
 	return &StateMachine{
-		lastApplied: 0,
-		tree:        NewTree(),
-		sessions:    make(map[proto.SessionId]*Session),
-		watches:     make(map[TreeEvent]Connections),
+		lastApplied:   0,
+		tree:          NewTree(),
+		sessions:      make(map[proto.SessionId]*Session),
+		watches:       make(map[TreeEvent]Connections),
+		output:        make(map[fullCommandId]chan<- CommandResult),
+		connectOutput: make(map[string]chan<- ConnectResult),
 	}
 }
 
@@ -129,12 +146,12 @@ func (sm *StateMachine) registerWatches(events RegisterEvents, conn Connection) 
 	}
 }
 
-func (sm *StateMachine) applyConnect(ctx *context, cmdBuf []byte) (*ConnectResult, proto.ErrCode) {
+func (sm *StateMachine) applyConnect(ctx *context, cmdBuf []byte) ConnectResult {
 	req := proto.ConnectRequest{}
 	err := jute.Decode(cmdBuf, &req)
 	if err != nil {
 		log.Printf("Error decoding connect command: %v", err)
-		return nil, proto.ErrBadArguments
+		return ConnectResult{ErrCode: proto.ErrBadArguments}
 	}
 	log.Printf("State machine got connect request %+v", req)
 
@@ -158,24 +175,25 @@ func (sm *StateMachine) applyConnect(ctx *context, cmdBuf []byte) (*ConnectResul
 		session, ok = sm.sessions[sessionId]
 		if !ok {
 			log.Printf("Session %v not found", sessionId)
-			return nil, proto.ErrSessionExpired
+			return ConnectResult{ErrCode: proto.ErrSessionExpired}
 		}
 		if !bytes.Equal(session.password, req.Passwd) {
 			log.Printf("Bad pasword for session %v", sessionId)
-			return nil, proto.ErrSessionExpired
+			return ConnectResult{ErrCode: proto.ErrSessionExpired}
 		}
 		session.connId++
 		session.lastCmdId = ctx.cmdId
 	}
-	return &ConnectResult{
-		proto.ConnectResponse{
+	return ConnectResult{
+		Resp: &proto.ConnectResponse{
 			ProtocolVersion: 12, // TODO: set this like ZooKeeper does
 			TimeOut:         req.TimeOut,
 			SessionID:       sessionId,
 			Passwd:          session.password,
 		},
-		session.connId,
-	}, proto.ErrOk
+		ConnId:  session.connId,
+		ErrCode: proto.ErrOk,
+	}
 }
 
 func (sm *StateMachine) applyCommand(ctx *context, cmdBuf []byte) ([]byte, proto.ErrCode) {
@@ -238,13 +256,13 @@ func (sm *StateMachine) applyCommand(ctx *context, cmdBuf []byte) ([]byte, proto
 	return respBuf, proto.ErrOk
 }
 
-func (sm *StateMachine) Apply(entry *raft.Log) interface{} {
+func (sm *StateMachine) Apply(entry *raft.Log) (unused interface{}) {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
 	sm.lastApplied = proto.ZXID(entry.Index)
 
 	if entry.Type != raft.LogCommand {
-		return nil
+		return
 	}
 
 	if len(entry.Data) == 0 {
@@ -270,34 +288,51 @@ func (sm *StateMachine) Apply(entry *raft.Log) interface{} {
 		cmdId:     header.CmdId,
 	}
 
+	reply := func(output []byte, errCode proto.ErrCode) {
+		fullId := fullCommandId{ctx.sessionId, ctx.connId, ctx.cmdId}
+		replyCh, ok := sm.output[fullId]
+		if !ok {
+			return
+		}
+		replyCh <- CommandResult{Index: ctx.zxid, Output: output, ErrCode: errCode}
+		delete(sm.output, fullId)
+	}
+
 	switch header.CmdType {
 	case ConnectCommand:
-		result, errCode := sm.applyConnect(ctx, cmdBuf)
-		if errCode != proto.ErrOk {
-			return errCode
+		result := sm.applyConnect(ctx, cmdBuf)
+		replyCh, ok := sm.connectOutput[string(ctx.rand)]
+		if ok {
+			replyCh <- result
+			delete(sm.connectOutput, string(ctx.rand))
 		}
-		return result
+		return
+
 	case NoOpCommand:
 		break
 	case NormalCommand:
 		break
 	default:
-		return proto.ErrUnimplemented
+		reply(nil, proto.ErrUnimplemented)
+		return
 	}
 
 	session, ok := sm.sessions[ctx.sessionId]
 	if !ok {
 		log.Printf("Session %v not found", ctx.sessionId)
-		return proto.ErrSessionExpired
+		reply(nil, proto.ErrSessionExpired)
+		return
 	}
 	if ctx.connId != session.connId {
 		log.Printf("Expired connection ID %v for session %v", ctx.connId, ctx.sessionId)
-		return proto.ErrSessionMoved
+		reply(nil, proto.ErrSessionMoved)
+		return
 	}
 	if ctx.cmdId != session.lastCmdId+1 {
 		log.Printf("Unexpected command ID %v for session %v (last was %v). Ignoring.",
 			ctx.cmdId, ctx.sessionId, session.lastCmdId)
-		return proto.ErrInvalidState
+		reply(nil, proto.ErrInvalidState)
+		return
 	}
 
 	var result []byte
@@ -305,6 +340,7 @@ func (sm *StateMachine) Apply(entry *raft.Log) interface{} {
 	if header.CmdType == NormalCommand {
 		result, errCode = sm.applyCommand(ctx, cmdBuf)
 	}
+	reply(result, errCode)
 	session.lastCmdId = ctx.cmdId
 
 	all := session.queries
@@ -313,10 +349,40 @@ func (sm *StateMachine) Apply(entry *raft.Log) interface{} {
 		sm.queueQuery(query)
 	}
 
-	if errCode != proto.ErrOk {
-		return errCode
-	}
-	return result
+	return
+}
+
+func (sm *StateMachine) ExpectCommand(
+	session proto.SessionId, connection ConnectionId, cmd CommandId) <-chan CommandResult {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+	ch := make(chan CommandResult, 1)
+	sm.output[fullCommandId{session, connection, cmd}] = ch
+	return ch
+}
+
+func (sm *StateMachine) ExpectConnect(rand []byte) <-chan ConnectResult {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+	ch := make(chan ConnectResult, 1)
+	sm.connectOutput[string(rand)] = ch
+	return ch
+}
+
+func (sm *StateMachine) CancelCommandResult(
+	session proto.SessionId, connection ConnectionId, cmd CommandId) {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+	delete(sm.output, fullCommandId{session, connection, cmd})
+}
+
+func (sm *StateMachine) CancelConnectResult(rand []byte) {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+	delete(sm.connectOutput, string(rand))
+}
+
+func (sm *StateMachine) Ping(conn Connection) {
 }
 
 type QueryResult struct {
