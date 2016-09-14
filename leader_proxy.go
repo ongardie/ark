@@ -78,6 +78,19 @@ func (p *leaderProxy) handle(conn net.Conn) {
 	}
 }
 
+func (p *leaderProxy) rejectConn(conn *proxyConn) {
+	p.mutex.Lock()
+	if p.conn == conn {
+		p.conn = nil
+	}
+	p.mutex.Unlock()
+	conn.netConn.Close()
+	select {
+	case conn.closeCh <- struct{}{}:
+	default:
+	}
+}
+
 func (p *leaderProxy) getConn() (*proxyConn, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
@@ -101,24 +114,20 @@ func (p *leaderProxy) getConn() (*proxyConn, error) {
 		netConn: conn,
 		closeCh: make(chan struct{}, 1),
 	}
-	go p.conn.waitForReadError()
+	go p.waitForReadError(p.conn)
 	log.Printf("Forwarding commands to %v", p.conn.addr)
 	return p.conn, nil
 }
 
-func (pc *proxyConn) waitForReadError() {
+func (p *leaderProxy) waitForReadError(conn *proxyConn) {
 	buf := make([]byte, 1)
-	_, err := io.ReadFull(pc.netConn, buf)
+	_, err := io.ReadFull(conn.netConn, buf)
 	if err != nil {
 		log.Printf("Proxy connection read error: %v", err)
 	} else {
 		log.Printf("Leader sent unexpected byte over proxy connection")
 	}
-	pc.netConn.Close()
-	select {
-	case pc.closeCh <- struct{}{}:
-	default:
-	}
+	p.rejectConn(conn)
 }
 
 // Returns as soon as the cmd will be ordered relative to subsequent calls to
@@ -149,11 +158,7 @@ func (p *leaderProxy) Apply(cmd []byte) (errCh <-chan error, doneCh chan<- struc
 	err = intframe.Send(conn.netConn, cmd)
 	if err != nil {
 		_errCh <- err
-		conn.netConn.Close()
-		select {
-		case conn.closeCh <- struct{}{}:
-		default:
-		}
+		p.rejectConn(conn)
 		return
 	}
 	go func() {
