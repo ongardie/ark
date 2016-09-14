@@ -7,6 +7,7 @@ package main
 
 import (
 	"errors"
+	"io"
 	"log"
 	"net"
 	"sync"
@@ -15,12 +16,17 @@ import (
 	"github.com/hashicorp/raft"
 )
 
+type proxyConn struct {
+	addr    raft.ServerAddress
+	netConn net.Conn
+	closeCh chan struct{}
+}
+
 type leaderProxy struct {
 	raft        *raft.Raft
 	streamLayer raft.StreamLayer
 	mutex       sync.Mutex
-	connAddr    raft.ServerAddress
-	conn        net.Conn
+	conn        *proxyConn
 }
 
 var (
@@ -70,7 +76,7 @@ func (p *leaderProxy) handle(conn net.Conn) {
 	}
 }
 
-func (p *leaderProxy) getConn() (net.Conn, error) {
+func (p *leaderProxy) getConn() (*proxyConn, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 	if p.conn != nil {
@@ -88,16 +94,39 @@ func (p *leaderProxy) getConn() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	p.connAddr = addr
-	p.conn = conn
-	log.Printf("Forwarding commands to %v", p.connAddr)
-	return conn, nil
+	p.conn = &proxyConn{
+		addr:    addr,
+		netConn: conn,
+		closeCh: make(chan struct{}, 1),
+	}
+	go p.conn.waitForReadError()
+	log.Printf("Forwarding commands to %v", p.conn.addr)
+	return p.conn, nil
+}
+
+func (pc *proxyConn) waitForReadError() {
+	buf := make([]byte, 1)
+	_, err := io.ReadFull(pc.netConn, buf)
+	if err != nil {
+		log.Printf("Proxy connection read error: %v", err)
+	} else {
+		log.Printf("Leader sent unexpected byte over proxy connection")
+	}
+	pc.netConn.Close()
+	select {
+	case pc.closeCh <- struct{}{}:
+	default:
+	}
 }
 
 // Returns as soon as the cmd will be ordered relative to subsequent calls to
 // Apply().
-func (p *leaderProxy) Apply(cmd []byte) <-chan error {
-	errCh := make(chan error, 1)
+func (p *leaderProxy) Apply(cmd []byte) (errCh <-chan error, doneCh chan<- struct{}) {
+	_errCh := make(chan error, 1)
+	_doneCh := make(chan struct{}, 1)
+	errCh = _errCh
+	doneCh = _doneCh
+
 	conn, err := p.getConn()
 	if err == local {
 		log.Printf("Applying command locally")
@@ -105,20 +134,33 @@ func (p *leaderProxy) Apply(cmd []byte) <-chan error {
 		go func() {
 			err := future.Error()
 			if err != nil {
-				errCh <- err
+				_errCh <- err
 			}
 		}()
-		return errCh
+		return
 	}
 	if err != nil {
-		errCh <- err
-		return errCh
+		_errCh <- err
+		return
 	}
 	log.Printf("Forwarding command")
-	err = sendFrame(conn, cmd)
+	err = sendFrame(conn.netConn, cmd)
 	if err != nil {
-		errCh <- err
-		return errCh
+		_errCh <- err
+		conn.netConn.Close()
+		select {
+		case conn.closeCh <- struct{}{}:
+		default:
+		}
+		return
 	}
-	return errCh
+	go func() {
+		select {
+		case <-conn.closeCh:
+			conn.closeCh <- struct{}{}
+			_errCh <- errors.New("connection to leader closed")
+		case <-_doneCh:
+		}
+	}()
+	return
 }

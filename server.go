@@ -73,7 +73,7 @@ func (s *Server) processConnect(rpc *ConnectRPC) {
 	buf := append(append([]byte{1}, headerBuf...), rpc.reqJute...)
 
 	resultCh := s.stateMachine.ExpectConnect(header.Rand)
-	errCh := s.leaderProxy.Apply(buf)
+	errCh, doneCh := s.leaderProxy.Apply(buf)
 	go func() {
 		select {
 		case result := <-resultCh:
@@ -83,9 +83,10 @@ func (s *Server) processConnect(rpc *ConnectRPC) {
 			} else {
 				rpc.reply(result.Resp, result.ConnId)
 			}
+			close(doneCh)
 		case err := <-errCh:
 			log.Printf("Failed to commit connect command: %v", err)
-			rpc.errReply(proto.ErrOperationTimeout) // TODO
+			rpc.conn.Close()
 			s.stateMachine.CancelConnectResult(header.Rand)
 		}
 	}()
@@ -113,7 +114,7 @@ func (s *Server) processCommand(rpc *RPC) {
 	buf = append(buf, rpc.req...)
 
 	resultCh := s.stateMachine.ExpectCommand(header.SessionId, header.ConnId, header.CmdId)
-	errCh := s.leaderProxy.Apply(buf)
+	errCh, doneCh := s.leaderProxy.Apply(buf)
 	go func() {
 		select {
 		case result := <-resultCh:
@@ -123,9 +124,10 @@ func (s *Server) processCommand(rpc *RPC) {
 			} else {
 				rpc.errReply(result.ErrCode)
 			}
+			close(doneCh)
 		case err := <-errCh:
 			log.Printf("Failed to commit %v command: %v", rpc.opName, err)
-			rpc.errReply(proto.ErrOperationTimeout) // TODO
+			rpc.conn.Close()
 			s.stateMachine.CancelCommandResult(header.SessionId, header.ConnId, header.CmdId)
 		}
 	}()
