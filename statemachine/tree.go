@@ -6,6 +6,7 @@
 package statemachine
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -108,18 +109,33 @@ func (t *Tree) CloseSession(ctx *context, req *proto.CloseRequest) (*Tree, *prot
 
 func (t *Tree) Create(ctx *context, req *proto.CreateRequest) (*Tree, *proto.CreateResponse, NotifyEvents, proto.ErrCode) {
 	var notify NotifyEvents
-	var do func(node *Tree, components []proto.Component) (*Tree, proto.ErrCode)
-	do = func(node *Tree, components []proto.Component) (*Tree, proto.ErrCode) {
-		if len(components) == 1 {
+	resp := &proto.CreateResponse{}
+	components := splitPath(req.Path)
+	if len(components) == 0 {
+		return nil, nil, nil, proto.ErrNodeExists
+	}
+
+	var do func(node *Tree, component int) (*Tree, proto.ErrCode)
+	do = func(node *Tree, component int) (*Tree, proto.ErrCode) {
+		if component == len(components)-1 {
 			if node.stat.EphemeralOwner > 0 {
 				return nil, proto.ErrNoChildrenForEphemerals
 			}
-			if _, ok := node.children[components[0]]; ok {
+
+			name := components[component]
+			if req.Mode == proto.ModeSequential || req.Mode == proto.ModeEphemeralSequential {
+				// Cversion == creations + deletions
+				// NumChildren == creations - deletions
+				// Cversion + NumChildren == creations * 2
+				// (Cversion + NumChildren) / 2 == creations
+				creations := (node.stat.Cversion + node.stat.NumChildren) / 2
+				name = proto.Component(fmt.Sprintf("%s%010d", name, creations))
+			}
+			resp.Path = joinPath(append(components[:component], name))
+
+			if _, ok := node.children[name]; ok {
 				return nil, proto.ErrNodeExists
 			}
-			notify = append(notify,
-				TreeEvent{req.Path, proto.EventNodeCreated},
-				TreeEvent{joinPath(components[:len(components)-1]), proto.EventNodeChildrenChanged})
 			child := &Tree{
 				data: req.Data,
 				acl:  req.Acl,
@@ -131,47 +147,47 @@ func (t *Tree) Create(ctx *context, req *proto.CreateRequest) (*Tree, *proto.Cre
 			if req.Mode == proto.ModeEphemeral || req.Mode == proto.ModeEphemeralSequential {
 				child.stat.EphemeralOwner = ctx.sessionId
 			}
-			node = node.withChild(components[0], child)
+			node = node.withChild(name, child)
 			node.stat.Pzxid = ctx.zxid
 			node.stat.Cversion += 1 // TODO: overflow?
 			node.stat.NumChildren++
+			notify = append(notify,
+				TreeEvent{resp.Path, proto.EventNodeCreated},
+				TreeEvent{joinPath(components[:component]), proto.EventNodeChildrenChanged})
 			return node, proto.ErrOk
 		} else {
-			child, ok := node.children[components[0]]
+			name := components[component]
+			child, ok := node.children[name]
 			if !ok {
 				return nil, proto.ErrNoNode
 			}
-			newChild, err := do(child, components[1:])
+			newChild, err := do(child, component+1)
 			if err != proto.ErrOk {
 				return nil, err
 			}
-			return node.withChild(components[0], newChild), proto.ErrOk
+			return node.withChild(name, newChild), proto.ErrOk
 		}
 	}
 
-	components := splitPath(req.Path)
-	if len(components) == 0 {
-		return nil, nil, nil, proto.ErrNodeExists
-	}
 	switch req.Mode {
 	case proto.ModePersistent:
 		break
 	case proto.ModeEphemeral:
 		break
-		// case proto.ModeSequential: TODO
-		// case proto.ModeEphemeralSequential: TODO
+	case proto.ModeSequential:
+		break
+	case proto.ModeEphemeralSequential:
+		break
 		// case proto.ModeContainer: TODO
 	default:
 		return nil, nil, nil, proto.ErrAPIError
 	}
 
-	root, err := do(t, components)
+	root, err := do(t, 0)
 	if err != proto.ErrOk {
 		return nil, nil, nil, err
 	}
-	return root, &proto.CreateResponse{
-		Path: req.Path,
-	}, notify, proto.ErrOk
+	return root, resp, notify, proto.ErrOk
 }
 
 func (t *Tree) Delete(ctx *context, req *proto.DeleteRequest) (*Tree, *proto.DeleteResponse, NotifyEvents, proto.ErrCode) {
