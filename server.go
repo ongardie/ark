@@ -169,6 +169,8 @@ func isReadOnly(opCode proto.OpCode) bool {
 		return true
 	case proto.OpPing:
 		return true
+	case proto.OpSetWatches:
+		return true
 	default:
 		return false
 	}

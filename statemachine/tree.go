@@ -65,6 +65,19 @@ func (old *Tree) withoutChild(name proto.Component) *Tree {
 	return node
 }
 
+func (t *Tree) lookup(path proto.Path) *Tree {
+	components := splitPath(path)
+	node := t
+	for _, component := range components {
+		var ok bool
+		node, ok = node.children[component]
+		if !ok {
+			return nil
+		}
+	}
+	return node
+}
+
 // TODO: req.Flags
 func (t *Tree) Create(ctx *context, req *proto.CreateRequest) (*Tree, *proto.CreateResponse, NotifyEvents, proto.ErrCode) {
 	var notify NotifyEvents
@@ -78,14 +91,18 @@ func (t *Tree) Create(ctx *context, req *proto.CreateRequest) (*Tree, *proto.Cre
 			notify = append(notify,
 				TreeEvent{req.Path, proto.EventNodeCreated},
 				TreeEvent{joinPath(components[:len(components)-1]), proto.EventNodeChildrenChanged})
-			return node.withChild(components[0], &Tree{
+			node = node.withChild(components[0], &Tree{
 				data: req.Data,
 				acl:  req.Acl,
 				stat: proto.Stat{
 					Czxid: ctx.zxid,
 					Ctime: ctx.time,
 				},
-			}), proto.ErrOk
+			})
+			node.stat.Pzxid = ctx.zxid
+			node.stat.Cversion += 1 // TODO: overflow?
+			node.stat.NumChildren++
+			return node, proto.ErrOk
 		} else {
 			child, ok := node.children[components[0]]
 			if !ok {
@@ -130,7 +147,11 @@ func (t *Tree) Delete(ctx *context, req *proto.DeleteRequest) (*Tree, *proto.Del
 			notify = append(notify,
 				TreeEvent{req.Path, proto.EventNodeDeleted},
 				TreeEvent{joinPath(components[:len(components)-1]), proto.EventNodeChildrenChanged})
-			return node.withoutChild(components[0]), proto.ErrOk
+			node = node.withoutChild(components[0])
+			node.stat.Pzxid = ctx.zxid
+			node.stat.Cversion += 1 // TODO: overflow?
+			node.stat.NumChildren--
+			return node, proto.ErrOk
 		} else {
 			child, ok := node.children[components[0]]
 			if !ok {
@@ -158,32 +179,21 @@ func (t *Tree) Delete(ctx *context, req *proto.DeleteRequest) (*Tree, *proto.Del
 // This one is a little funny in that it can return RegisterEvents even with proto.ErrNoNode.
 func (t *Tree) Exists(ctx *context, req *proto.ExistsRequest) (*proto.ExistsResponse, RegisterEvents, proto.ErrCode) {
 	var register RegisterEvents
-	resp := &proto.ExistsResponse{}
-	var do func(node *Tree, components []proto.Component) proto.ErrCode
-	do = func(node *Tree, components []proto.Component) proto.ErrCode {
-		if len(components) == 0 {
-			resp.Stat = node.stat
-			if req.Watch {
-				register = append(register,
-					TreeEvent{req.Path, proto.EventNodeDataChanged},
-					TreeEvent{req.Path, proto.EventNodeDeleted})
-			}
-			return proto.ErrOk
-		} else {
-			child, ok := node.children[components[0]]
-			if !ok {
-				return proto.ErrNoNode
-			}
-			return do(child, components[1:])
-		}
-	}
-	err := do(t, splitPath(req.Path))
-	if err != proto.ErrOk {
-		if err == proto.ErrNoNode && req.Watch {
+	target := t.lookup(req.Path)
+	if target == nil {
+		if req.Watch {
 			register = append(register,
 				TreeEvent{req.Path, proto.EventNodeCreated})
 		}
-		return nil, register, err
+		return nil, register, proto.ErrNoNode
+	}
+	resp := &proto.ExistsResponse{
+		Stat: target.stat,
+	}
+	if req.Watch {
+		register = append(register,
+			TreeEvent{req.Path, proto.EventNodeDataChanged},
+			TreeEvent{req.Path, proto.EventNodeDeleted})
 	}
 	return resp, register, proto.ErrOk
 }
@@ -196,62 +206,39 @@ func (p ComponentSortable) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
 func (t *Tree) GetChildren2(ctx *context, req *proto.GetChildren2Request) (*proto.GetChildren2Response, RegisterEvents, proto.ErrCode) {
 	var register RegisterEvents
-	resp := &proto.GetChildren2Response{}
-	var do func(node *Tree, components []proto.Component) proto.ErrCode
-	do = func(node *Tree, components []proto.Component) proto.ErrCode {
-		if len(components) == 0 {
-			resp.Children = make([]proto.Component, 0, len(node.children))
-			for name := range node.children {
-				resp.Children = append(resp.Children, name)
-			}
-			sort.Sort(ComponentSortable(resp.Children))
-			resp.Stat = node.stat
-			if req.Watch {
-				register = append(register,
-					TreeEvent{req.Path, proto.EventNodeChildrenChanged},
-					TreeEvent{req.Path, proto.EventNodeDeleted})
-			}
-			return proto.ErrOk
-		} else {
-			child, ok := node.children[components[0]]
-			if !ok {
-				return proto.ErrNoNode
-			}
-			return do(child, components[1:])
-		}
+	target := t.lookup(req.Path)
+	if target == nil {
+		return nil, register, proto.ErrNoNode
 	}
-	err := do(t, splitPath(req.Path))
-	if err != proto.ErrOk {
-		return nil, register, err
+	resp := &proto.GetChildren2Response{}
+	resp.Children = make([]proto.Component, 0, len(target.children))
+	for name := range target.children {
+		resp.Children = append(resp.Children, name)
+	}
+	sort.Sort(ComponentSortable(resp.Children))
+	resp.Stat = target.stat
+	if req.Watch {
+		register = append(register,
+			TreeEvent{req.Path, proto.EventNodeChildrenChanged},
+			TreeEvent{req.Path, proto.EventNodeDeleted})
 	}
 	return resp, register, proto.ErrOk
 }
 
 func (t *Tree) GetData(ctx *context, req *proto.GetDataRequest) (*proto.GetDataResponse, RegisterEvents, proto.ErrCode) {
 	var register RegisterEvents
-	resp := &proto.GetDataResponse{}
-	var do func(node *Tree, components []proto.Component) proto.ErrCode
-	do = func(node *Tree, components []proto.Component) proto.ErrCode {
-		if len(components) == 0 {
-			resp.Data = node.data
-			resp.Stat = node.stat
-			if req.Watch {
-				register = append(register,
-					TreeEvent{req.Path, proto.EventNodeDataChanged},
-					TreeEvent{req.Path, proto.EventNodeDeleted})
-			}
-			return proto.ErrOk
-		} else {
-			child, ok := node.children[components[0]]
-			if !ok {
-				return proto.ErrNoNode
-			}
-			return do(child, components[1:])
-		}
+	target := t.lookup(req.Path)
+	if target == nil {
+		return nil, register, proto.ErrNoNode
 	}
-	err := do(t, splitPath(req.Path))
-	if err != proto.ErrOk {
-		return nil, register, err
+	resp := &proto.GetDataResponse{
+		Data: target.data,
+		Stat: target.stat,
+	}
+	if req.Watch {
+		register = append(register,
+			TreeEvent{req.Path, proto.EventNodeDataChanged},
+			TreeEvent{req.Path, proto.EventNodeDeleted})
 	}
 	return resp, register, proto.ErrOk
 }
@@ -291,4 +278,55 @@ func (t *Tree) SetData(ctx *context, req *proto.SetDataRequest) (*Tree, *proto.S
 		return nil, nil, nil, err
 	}
 	return root, resp, notify, proto.ErrOk
+}
+
+// This behaves mostly like a query, except that it can also send inferred
+// watch notifications to the connection that invokes it.
+func (t *Tree) SetWatches(ctx *context, req *proto.SetWatchesRequest) (*proto.SetWatchesResponse, RegisterEvents, NotifyEvents, proto.ErrCode) {
+	var register RegisterEvents
+	var notify NotifyEvents
+	resp := &proto.SetWatchesResponse{}
+
+	for _, path := range req.DataWatches {
+		target := t.lookup(path)
+		if target == nil {
+			notify = append(notify,
+				TreeEvent{path, proto.EventNodeDeleted})
+		} else if target.stat.Mzxid > req.RelativeZxid {
+			notify = append(notify,
+				TreeEvent{path, proto.EventNodeDataChanged})
+		} else {
+			register = append(register,
+				TreeEvent{path, proto.EventNodeDataChanged},
+				TreeEvent{path, proto.EventNodeDeleted})
+		}
+	}
+
+	for _, path := range req.ExistWatches {
+		target := t.lookup(path)
+		if target != nil {
+			notify = append(notify,
+				TreeEvent{path, proto.EventNodeCreated})
+		} else {
+			register = append(register,
+				TreeEvent{path, proto.EventNodeCreated})
+		}
+	}
+
+	for _, path := range req.ChildWatches {
+		target := t.lookup(path)
+		if target == nil {
+			notify = append(notify,
+				TreeEvent{path, proto.EventNodeDeleted})
+		} else if target.stat.Pzxid > req.RelativeZxid {
+			notify = append(notify,
+				TreeEvent{path, proto.EventNodeChildrenChanged})
+		} else {
+			register = append(register,
+				TreeEvent{path, proto.EventNodeChildrenChanged},
+				TreeEvent{path, proto.EventNodeDeleted})
+		}
+	}
+
+	return resp, register, notify, proto.ErrOk
 }

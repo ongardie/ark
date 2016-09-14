@@ -281,9 +281,9 @@ type setSaslResponse struct {
 
 type SetWatchesRequest struct {
 	RelativeZxid ZXID
-	DataWatches  []string
-	ExistWatches []string
-	ChildWatches []string
+	DataWatches  []Path
+	ExistWatches []Path
+	ChildWatches []Path
 }
 
 type SetWatchesResponse struct{}

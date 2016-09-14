@@ -493,6 +493,16 @@ func (sm *StateMachine) queueQuery(query *asyncQuery) {
 			log.Printf("GetData(%+v) -> %+v", req, resp)
 		}
 
+	case proto.OpSetWatches:
+		if req := new(proto.SetWatchesRequest); decode(req) {
+			var localNotify NotifyEvents
+			resp, register, localNotify, errCode = sm.tree.SetWatches(ctx, req)
+			log.Printf("SetWatches(%+v) -> %+v", req, resp)
+			for _, event := range localNotify {
+				query.conn.Notify(ctx.zxid, event)
+			}
+		}
+
 	default:
 		errCode = proto.ErrUnimplemented
 	}
