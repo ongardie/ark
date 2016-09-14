@@ -24,7 +24,7 @@ func DecodeSome(buf []byte, msg interface{}) ([]byte, error) {
 		return buf, err
 	}
 	buf = buf[n:]
-	log.Printf("DecodePacket returned %v, so %v bytes left", n, len(buf))
+	//log.Printf("DecodePacket returned %v, so %v bytes left", n, len(buf))
 	return buf, nil
 }
 

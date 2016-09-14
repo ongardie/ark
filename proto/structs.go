@@ -419,7 +419,7 @@ type WatcherEvent struct {
 	Path  Path
 }
 
-func requestStructForOp(op int32) interface{} {
+func RequestStructForOp(op OpCode) interface{} {
 	switch op {
 	case OpClose:
 		return &closeRequest{}
@@ -453,6 +453,44 @@ func requestStructForOp(op int32) interface{} {
 		return &CheckVersionRequest{}
 	case OpMulti:
 		return &MultiRequest{}
+	}
+	return nil
+}
+
+func ResponseStructForOp(op OpCode) interface{} {
+	switch op {
+	case OpClose:
+		return &closeResponse{}
+	case OpCreate:
+		return &CreateResponse{}
+	case OpDelete:
+		return &DeleteResponse{}
+	case OpExists:
+		return &ExistsResponse{}
+	case OpGetAcl:
+		return &GetAclResponse{}
+	case OpGetChildren:
+		return &GetChildrenResponse{}
+	case OpGetChildren2:
+		return &GetChildren2Response{}
+	case OpGetData:
+		return &GetDataResponse{}
+	case OpPing:
+		return &PingResponse{}
+	case OpSetAcl:
+		return &SetAclResponse{}
+	case OpSetData:
+		return &SetDataResponse{}
+	case OpSetWatches:
+		return &SetWatchesResponse{}
+	case OpSync:
+		return &SyncResponse{}
+	case OpSetAuth:
+		return &SetAuthResponse{}
+	//case OpCheck:
+	//return &CheckVersionResponse{}
+	case OpMulti:
+		return &MultiResponse{}
 	}
 	return nil
 }

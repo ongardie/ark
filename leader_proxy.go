@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"salesforce.com/zoolater/intframe"
+
 	"github.com/hashicorp/raft"
 )
 
@@ -56,7 +58,7 @@ func (p *leaderProxy) listen() {
 
 func (p *leaderProxy) handle(conn net.Conn) {
 	for {
-		cmd, err := receiveFrame(conn)
+		cmd, err := intframe.Receive(conn)
 		if err != nil {
 			log.Printf("Error receiving proxied command (%v), closing connection", err)
 			conn.Close()
@@ -144,7 +146,7 @@ func (p *leaderProxy) Apply(cmd []byte) (errCh <-chan error, doneCh chan<- struc
 		return
 	}
 	log.Printf("Forwarding command")
-	err = sendFrame(conn.netConn, cmd)
+	err = intframe.Send(conn.netConn, cmd)
 	if err != nil {
 		_errCh <- err
 		conn.netConn.Close()

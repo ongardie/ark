@@ -1,13 +1,12 @@
 package main
 
 import (
-	"encoding/binary"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"sync"
 
+	"salesforce.com/zoolater/intframe"
 	"salesforce.com/zoolater/jute"
 	"salesforce.com/zoolater/proto"
 	"salesforce.com/zoolater/statemachine"
@@ -100,7 +99,7 @@ func (conn *JuteConnection) Notify(zxid proto.ZXID, event statemachine.TreeEvent
 
 func (conn *JuteConnection) handshake() {
 	// Receive connection request from the client
-	req, err := receiveFrame(conn.netConn)
+	req, err := intframe.Receive(conn.netConn)
 	if err != nil {
 		log.Printf("Error receiving connection request (%v), closing connection", err)
 		conn.Close()
@@ -122,7 +121,7 @@ func (conn *JuteConnection) handshake() {
 	}
 
 	// Send it back to the client
-	err = sendFrame(conn.netConn, msg)
+	err = intframe.Send(conn.netConn, msg)
 	if err != nil {
 		log.Printf("Error sending connection response (%v), closing connection", err)
 		conn.Close()
@@ -172,26 +171,9 @@ func (conn *JuteConnection) Close() {
 	}
 }
 
-func receiveFrame(conn net.Conn) ([]byte, error) {
-	log.Printf("Waiting for incoming message")
-	buf := make([]byte, 4)
-	n, err := io.ReadFull(conn, buf)
-	if err != nil {
-		return nil, err
-	}
-	bytes := binary.BigEndian.Uint32(buf[:n])
-	log.Printf("Expecting %v bytes", bytes)
-	buf = make([]byte, bytes)
-	_, err = io.ReadFull(conn, buf)
-	if err != nil {
-		return nil, err
-	}
-	return buf, nil
-}
-
 func (conn *JuteConnection) receiveLoop() {
 	for {
-		req, err := receiveFrame(conn.netConn)
+		req, err := intframe.Receive(conn.netConn)
 		if err != nil {
 			log.Printf("Error receiving message (%v), closing connection", err)
 			conn.Close()
@@ -204,14 +186,6 @@ func (conn *JuteConnection) receiveLoop() {
 			return
 		}
 	}
-}
-
-func sendFrame(conn net.Conn, msg []byte) error {
-	buf := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf, uint32(len(msg)))
-	buf = append(buf, msg...)
-	_, err := conn.Write(buf)
-	return err
 }
 
 func (conn *JuteConnection) toSend() []byte {
@@ -234,7 +208,7 @@ func (conn *JuteConnection) sendLoop() {
 		if msg == nil {
 			return
 		}
-		err := sendFrame(conn.netConn, msg)
+		err := intframe.Send(conn.netConn, msg)
 		if err != nil {
 			log.Printf("Error sending message (%v), closing connection", err)
 			conn.Close()
