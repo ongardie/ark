@@ -34,7 +34,7 @@ func Decode(buf []byte, msg interface{}) error {
 		return err
 	}
 	if len(more) > 0 {
-		return fmt.Errorf("Unexpected bytes after reading %T", msg)
+		return fmt.Errorf("Found %v unexpected bytes after reading %T", len(more), msg)
 	}
 	return nil
 }

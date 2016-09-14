@@ -217,7 +217,7 @@ type GetAclResponse struct {
 	Stat Stat
 }
 
-type GetChildrenRequest pathRequest
+type GetChildrenRequest pathWatchRequest
 
 type GetChildrenResponse struct {
 	Children []Component
