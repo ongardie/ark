@@ -62,7 +62,7 @@ func decodeRequest(count uint64, msg []byte, withHeader func(proto.RequestHeader
 		} else if len(more) > 1 {
 			extra = " [?+]"
 		}
-		return fmt.Sprintf("ConnectRequest %+v%v", req, extra)
+		return fmt.Sprintf("connect request %+v%v", req, extra)
 	}
 
 	var reqHeader proto.RequestHeader
@@ -105,7 +105,7 @@ func decodeReply(count uint64, msg []byte, getOpCode func(xid int32) (proto.OpCo
 		} else if len(more) > 1 {
 			extra = " [?+]"
 		}
-		return fmt.Sprintf("ConnectResponse %+v%v", req, extra)
+		return fmt.Sprintf("connect response %+v%v", req, extra)
 	}
 
 	var respHeader proto.ResponseHeader
@@ -114,23 +114,35 @@ func decodeReply(count uint64, msg []byte, getOpCode func(xid int32) (proto.OpCo
 		return fmt.Sprintf("error reading response header: %v", err)
 	}
 
-	opCode, ok := getOpCode(respHeader.Xid)
-	if !ok {
-		return fmt.Sprintf("%+v %v", respHeader, more)
+	var resp interface{}
+	var name string
+	switch respHeader.Xid {
+	case proto.XidWatcherEvent:
+		resp = &proto.WatcherEvent{}
+		name = "watcher event"
+	case proto.XidPing:
+		resp = &proto.PingResponse{}
+		name = "ping response"
+	default:
+		opCode, ok := getOpCode(respHeader.Xid)
+		if !ok {
+			return fmt.Sprintf("%+v %v", respHeader, more)
+		}
+		name = fmt.Sprintf("%s response", opName(opCode))
+		resp = proto.ResponseStructForOp(opCode)
+		if resp == nil {
+			return fmt.Sprintf("%+v %v (unknown struct)",
+				respHeader, name)
+		}
 	}
 
-	resp := proto.ResponseStructForOp(opCode)
-	if resp == nil {
-		return fmt.Sprintf("%+v %v (unknown struct)",
-			respHeader, opName(opCode))
-	}
 	err = jute.Decode(more, resp)
 	if err != nil {
 		return fmt.Sprintf("%+v %v with decode error: %v",
-			respHeader, opName(opCode), err)
+			respHeader, name, err)
 	}
 
-	return fmt.Sprintf("%+v %v response %+v", respHeader, opName(opCode), resp)
+	return fmt.Sprintf("%+v %v %+v", respHeader, name, resp)
 }
 
 func (conn *proxyConn) requestLoop() {
@@ -174,18 +186,13 @@ func (conn *proxyConn) replyLoop() {
 			return
 		}
 		str := decodeReply(conn.replies, msg, func(xid int32) (proto.OpCode, bool) {
-			switch xid {
-			case proto.XidPing:
-				return proto.OpPing, true
-			default:
-				conn.opsMutex.Lock()
-				opCode, ok := conn.ops[xid]
-				if ok {
-					delete(conn.ops, xid)
-				}
-				conn.opsMutex.Unlock()
-				return opCode, ok
+			conn.opsMutex.Lock()
+			opCode, ok := conn.ops[xid]
+			if ok {
+				delete(conn.ops, xid)
 			}
+			conn.opsMutex.Unlock()
+			return opCode, ok
 		})
 		log.Printf("[conn %v] server sent %v",
 			conn.id, str)
