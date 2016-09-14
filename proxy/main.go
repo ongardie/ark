@@ -136,6 +136,10 @@ func decodeReply(count uint64, msg []byte, getOpCode func(xid int32) (proto.OpCo
 		}
 	}
 
+	if respHeader.Err != proto.ErrOk {
+		return fmt.Sprintf("%+v %v %v", respHeader, name, respHeader.Err.Error())
+	}
+
 	err = jute.Decode(more, resp)
 	if err != nil {
 		return fmt.Sprintf("%+v %v with decode error: %v",

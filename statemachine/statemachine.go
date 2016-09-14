@@ -469,29 +469,43 @@ func (sm *StateMachine) queueQuery(query *asyncQuery) {
 	var register RegisterEvents
 	errCode := proto.ErrMarshallingError
 	switch query.opCode {
+	case proto.OpExists:
+		if req := new(proto.ExistsRequest); decode(req) {
+			resp, register, errCode = sm.tree.Exists(ctx, req)
+			log.Printf("Exists(%+v) -> %+v", req, resp)
+		}
+
 	case proto.OpGetChildren:
 		if req := new(proto.GetChildrenRequest); decode(req) {
 			resp, register, errCode = sm.tree.GetChildren(ctx, req)
 			log.Printf("GetChildren(%+v) -> %+v", req, resp)
 		}
+
 	case proto.OpGetChildren2:
 		if req := new(proto.GetChildren2Request); decode(req) {
 			resp, register, errCode = sm.tree.GetChildren2(ctx, req)
 			log.Printf("GetChildren2(%+v) -> %+v", req, resp)
 		}
+
 	case proto.OpGetData:
 		if req := new(proto.GetDataRequest); decode(req) {
 			resp, register, errCode = sm.tree.GetData(ctx, req)
 			log.Printf("GetData(%+v) -> %+v", req, resp)
 		}
+
 	default:
 		errCode = proto.ErrUnimplemented
 	}
+
+	// We're supposed to register watches even if query returns an error. For
+	// instance, Exists() can return ErrNoNode but still set watches on the
+	// creation of the node.
+	sm.registerWatches(register, query.conn)
+
 	if errCode != proto.ErrOk {
 		query.respCh <- QueryResult{ErrCode: errCode}
 		return
 	}
-	sm.registerWatches(register, query.conn)
 	respBuf, err := jute.Encode(resp)
 	if err != nil {
 		log.Printf("Could not encode %+v. Closing connection", resp)

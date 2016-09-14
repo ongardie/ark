@@ -155,6 +155,39 @@ func (t *Tree) Delete(ctx *context, req *proto.DeleteRequest) (*Tree, *proto.Del
 	return root, &proto.DeleteResponse{}, notify, proto.ErrOk
 }
 
+// This one is a little funny in that it can return RegisterEvents even with proto.ErrNoNode.
+func (t *Tree) Exists(ctx *context, req *proto.ExistsRequest) (*proto.ExistsResponse, RegisterEvents, proto.ErrCode) {
+	var register RegisterEvents
+	resp := &proto.ExistsResponse{}
+	var do func(node *Tree, components []proto.Component) proto.ErrCode
+	do = func(node *Tree, components []proto.Component) proto.ErrCode {
+		if len(components) == 0 {
+			resp.Stat = node.stat
+			if req.Watch {
+				register = append(register,
+					TreeEvent{req.Path, proto.EventNodeDataChanged},
+					TreeEvent{req.Path, proto.EventNodeDeleted})
+			}
+			return proto.ErrOk
+		} else {
+			child, ok := node.children[components[0]]
+			if !ok {
+				return proto.ErrNoNode
+			}
+			return do(child, components[1:])
+		}
+	}
+	err := do(t, splitPath(req.Path))
+	if err != proto.ErrOk {
+		if err == proto.ErrNoNode && req.Watch {
+			register = append(register,
+				TreeEvent{req.Path, proto.EventNodeCreated})
+		}
+		return nil, register, err
+	}
+	return resp, register, proto.ErrOk
+}
+
 type ComponentSortable []proto.Component
 
 func (p ComponentSortable) Len() int           { return len(p) }
@@ -189,7 +222,7 @@ func (t *Tree) GetChildren2(ctx *context, req *proto.GetChildren2Request) (*prot
 	}
 	err := do(t, splitPath(req.Path))
 	if err != proto.ErrOk {
-		return nil, nil, err
+		return nil, register, err
 	}
 	return resp, register, proto.ErrOk
 }
@@ -218,7 +251,7 @@ func (t *Tree) GetData(ctx *context, req *proto.GetDataRequest) (*proto.GetDataR
 	}
 	err := do(t, splitPath(req.Path))
 	if err != proto.ErrOk {
-		return nil, nil, err
+		return nil, register, err
 	}
 	return resp, register, proto.ErrOk
 }

@@ -106,6 +106,42 @@ func Test_tree_Delete(t *testing.T) {
 	}
 }
 
+func Test_tree_Exists(t *testing.T) {
+	t0 := NewTree()
+	t1, _, _, err := t0.Create(ctx, &proto.CreateRequest{
+		Path: "/hello",
+	})
+	if err != proto.ErrOk {
+		t.Fatalf("Unexpected error: %v", err.Error())
+	}
+	resp, register, err := t1.Exists(ctx, &proto.ExistsRequest{
+		Path:  "/hello",
+		Watch: true,
+	})
+	if err != proto.ErrOk {
+		t.Fatalf("Unexpected error: %v", err.Error())
+	}
+	if resp == nil {
+		t.Fatalf("Expected response")
+	}
+	if len(register) != 2 {
+		t.Fatalf("Missing watch registration for node deletion/data")
+	}
+	resp, register, err = t1.Exists(ctx, &proto.ExistsRequest{
+		Path:  "/hello/world/foo",
+		Watch: true,
+	})
+	if err != proto.ErrNoNode {
+		t.Fatalf("Unexpected error: %v", err.Error())
+	}
+	if resp != nil {
+		t.Fatalf("Unexpected response: %v", resp)
+	}
+	if len(register) != 1 {
+		t.Fatalf("Missing watch registration for node creation")
+	}
+}
+
 func Test_tree_GetChildren2(t *testing.T) {
 	t0 := NewTree()
 	t1, _, _, err := t0.Create(ctx, &proto.CreateRequest{
