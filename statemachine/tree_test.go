@@ -81,6 +81,31 @@ func Test_tree_Create(t *testing.T) {
 	}
 }
 
+func Test_tree_Delete(t *testing.T) {
+	t0 := NewTree()
+	t1, _, _, err := t0.Create(ctx, &proto.CreateRequest{
+		Path: "/hello",
+	})
+	if err != proto.ErrOk {
+		t.Fatalf("Unexpected error: %v", err.Error())
+	}
+	t2, _, _, err := t1.Delete(ctx, &proto.DeleteRequest{
+		Path: "/hello",
+	})
+	if err != proto.ErrOk {
+		t.Fatalf("Unexpected error: %v", err.Error())
+	}
+	resp, _, err := t2.GetChildren2(ctx, &proto.GetChildren2Request{
+		Path: "/",
+	})
+	if err != proto.ErrOk {
+		t.Fatalf("Unexpected error: %v", err.Error())
+	}
+	if len(resp.Children) > 0 {
+		t.Fatalf("Unexpected children: %#v", resp.Children)
+	}
+}
+
 func Test_tree_GetChildren2(t *testing.T) {
 	t0 := NewTree()
 	t1, _, _, err := t0.Create(ctx, &proto.CreateRequest{

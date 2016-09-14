@@ -49,12 +49,19 @@ func (t *Tree) shallowClone() *Tree {
 }
 
 func (old *Tree) withChild(name proto.Component, child *Tree) *Tree {
+	node := old.withoutChild(name)
+	node.children[name] = child
+	return node
+}
+
+func (old *Tree) withoutChild(name proto.Component) *Tree {
 	node := old.shallowClone()
 	node.children = make(map[proto.Component]*Tree, len(old.children))
 	for k, v := range old.children {
-		node.children[k] = v
+		if k != name {
+			node.children[k] = v
+		}
 	}
-	node.children[name] = child
 	return node
 }
 
@@ -103,6 +110,49 @@ func (t *Tree) Create(ctx *context, req *proto.CreateRequest) (*Tree, *proto.Cre
 	return root, &proto.CreateResponse{
 		Path: req.Path,
 	}, notify, proto.ErrOk
+}
+
+func (t *Tree) Delete(ctx *context, req *proto.DeleteRequest) (*Tree, *proto.DeleteResponse, NotifyEvents, proto.ErrCode) {
+	var notify NotifyEvents
+	var do func(node *Tree, components []proto.Component) (*Tree, proto.ErrCode)
+	do = func(node *Tree, components []proto.Component) (*Tree, proto.ErrCode) {
+		if len(components) == 1 {
+			target, ok := node.children[components[0]]
+			if !ok {
+				return nil, proto.ErrNoNode
+			}
+			if req.Version >= 0 && target.stat.Version != req.Version {
+				return nil, proto.ErrBadVersion
+			}
+			if len(target.children) > 0 {
+				return nil, proto.ErrNotEmpty
+			}
+			notify = append(notify,
+				TreeEvent{req.Path, proto.EventNodeDeleted},
+				TreeEvent{joinPath(components[:len(components)-1]), proto.EventNodeChildrenChanged})
+			return node.withoutChild(components[0]), proto.ErrOk
+		} else {
+			child, ok := node.children[components[0]]
+			if !ok {
+				return nil, proto.ErrNoNode
+			}
+			newChild, err := do(child, components[1:])
+			if err != proto.ErrOk {
+				return nil, err
+			}
+			return node.withChild(components[0], newChild), proto.ErrOk
+		}
+	}
+
+	components := splitPath(req.Path)
+	if len(components) == 0 {
+		return nil, nil, nil, proto.ErrBadArguments
+	}
+	root, err := do(t, components)
+	if err != proto.ErrOk {
+		return nil, nil, nil, err
+	}
+	return root, &proto.DeleteResponse{}, notify, proto.ErrOk
 }
 
 type ComponentSortable []proto.Component

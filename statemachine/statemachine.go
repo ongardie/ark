@@ -234,6 +234,11 @@ func (sm *StateMachine) applyCommand(ctx *context, cmdBuf []byte) ([]byte, proto
 			tree, resp, notify, errCode = sm.tree.Create(ctx, req)
 		}
 
+	case proto.OpDelete:
+		if req := new(proto.DeleteRequest); decode(req) {
+			tree, resp, notify, errCode = sm.tree.Delete(ctx, req)
+		}
+
 	case proto.OpSetData:
 		if req := new(proto.SetDataRequest); decode(req) {
 			tree, resp, notify, errCode = sm.tree.SetData(ctx, req)
