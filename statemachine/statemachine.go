@@ -236,7 +236,8 @@ func (sm *StateMachine) applyCommand(ctx *context, cmdBuf []byte) ([]byte, proto
 	switch reqHeader.OpCode {
 	case proto.OpClose:
 		if req := new(proto.CloseRequest); decode(req) {
-			resp, errCode = sm.closeSession(ctx, req)
+			delete(sm.sessions, ctx.sessionId)
+			tree, resp, notify, errCode = sm.tree.CloseSession(ctx, req)
 		}
 
 	case proto.OpCreate:
@@ -260,9 +261,7 @@ func (sm *StateMachine) applyCommand(ctx *context, cmdBuf []byte) ([]byte, proto
 		return nil, errCode
 	}
 	log.Printf("%v(%+v) -> %+v, %v notifies", opName, req2, resp, len(notify))
-	if tree != nil {
-		sm.tree = tree
-	}
+	sm.tree = tree
 	sm.notifyWatches(ctx.zxid, notify)
 
 	respBuf, err := jute.Encode(resp)

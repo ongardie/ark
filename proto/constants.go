@@ -111,8 +111,12 @@ const (
 )
 
 const (
-	FlagEphemeral = 1
-	FlagSequence  = 2
+	ModeDefault             CreateMode = ModePersistent
+	ModePersistent          CreateMode = 0
+	ModeEphemeral           CreateMode = 1
+	ModeSequential          CreateMode = 2
+	ModeEphemeralSequential CreateMode = 3
+	ModeContainer           CreateMode = 4
 )
 
 var (

@@ -78,27 +78,60 @@ func (t *Tree) lookup(path proto.Path) *Tree {
 	return node
 }
 
-// TODO: req.Flags
+// TODO: O(n) probably isn't ok
+func (t *Tree) CloseSession(ctx *context, req *proto.CloseRequest) (*Tree, *proto.CloseResponse, NotifyEvents, proto.ErrCode) {
+	var notify NotifyEvents
+	var do func(components []proto.Component, node *Tree) *Tree
+	do = func(components []proto.Component, node *Tree) *Tree {
+		if node.stat.EphemeralOwner == ctx.sessionId {
+			notify = append(notify,
+				TreeEvent{joinPath(components), proto.EventNodeDeleted},
+				TreeEvent{joinPath(components[:len(components)-1]), proto.EventNodeChildrenChanged})
+			return nil
+		}
+		for name, child := range node.children {
+			newChild := do(append(components, name), child)
+			if newChild == nil {
+				node = node.withoutChild(name)
+				node.stat.Pzxid = ctx.zxid
+				node.stat.Cversion += 1 // TODO: overflow?
+				node.stat.NumChildren--
+			} else if child != newChild {
+				node = node.withChild(name, child)
+			}
+		}
+		return node
+	}
+	root := do([]proto.Component{}, t)
+	return root, &proto.CloseResponse{}, notify, proto.ErrOk
+}
+
 func (t *Tree) Create(ctx *context, req *proto.CreateRequest) (*Tree, *proto.CreateResponse, NotifyEvents, proto.ErrCode) {
 	var notify NotifyEvents
 	var do func(node *Tree, components []proto.Component) (*Tree, proto.ErrCode)
 	do = func(node *Tree, components []proto.Component) (*Tree, proto.ErrCode) {
 		if len(components) == 1 {
-			_, ok := node.children[components[0]]
-			if ok {
+			if node.stat.EphemeralOwner > 0 {
+				return nil, proto.ErrNoChildrenForEphemerals
+			}
+			if _, ok := node.children[components[0]]; ok {
 				return nil, proto.ErrNodeExists
 			}
 			notify = append(notify,
 				TreeEvent{req.Path, proto.EventNodeCreated},
 				TreeEvent{joinPath(components[:len(components)-1]), proto.EventNodeChildrenChanged})
-			node = node.withChild(components[0], &Tree{
+			child := &Tree{
 				data: req.Data,
 				acl:  req.Acl,
 				stat: proto.Stat{
 					Czxid: ctx.zxid,
 					Ctime: ctx.time,
 				},
-			})
+			}
+			if req.Mode == proto.ModeEphemeral || req.Mode == proto.ModeEphemeralSequential {
+				child.stat.EphemeralOwner = ctx.sessionId
+			}
+			node = node.withChild(components[0], child)
 			node.stat.Pzxid = ctx.zxid
 			node.stat.Cversion += 1 // TODO: overflow?
 			node.stat.NumChildren++
@@ -120,6 +153,18 @@ func (t *Tree) Create(ctx *context, req *proto.CreateRequest) (*Tree, *proto.Cre
 	if len(components) == 0 {
 		return nil, nil, nil, proto.ErrNodeExists
 	}
+	switch req.Mode {
+	case proto.ModePersistent:
+		break
+	case proto.ModeEphemeral:
+		break
+		// case proto.ModeSequential: TODO
+		// case proto.ModeEphemeralSequential: TODO
+		// case proto.ModeContainer: TODO
+	default:
+		return nil, nil, nil, proto.ErrAPIError
+	}
+
 	root, err := do(t, components)
 	if err != proto.ErrOk {
 		return nil, nil, nil, err
