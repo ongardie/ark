@@ -33,6 +33,6 @@ type RPC struct {
 	reqHeader     proto.RequestHeader
 	opName        string
 	req           []byte
-	errReply      func(proto.ErrCode)
+	errReply      func(proto.ZXID, proto.ErrCode)
 	reply         func(proto.ZXID, []byte)
 }

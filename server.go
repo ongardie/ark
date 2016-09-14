@@ -122,7 +122,7 @@ func (s *Server) processCommand(rpc *RPC) {
 			if result.ErrCode == proto.ErrOk {
 				rpc.reply(result.Index, result.Output)
 			} else {
-				rpc.errReply(result.ErrCode)
+				rpc.errReply(result.Index, result.ErrCode)
 			}
 			close(doneCh)
 		case err := <-errCh:
@@ -150,7 +150,7 @@ func (s *Server) processQuery(rpc *RPC) {
 		if result.ErrCode == proto.ErrOk {
 			rpc.reply(result.Zxid, result.Output)
 		} else {
-			rpc.errReply(result.ErrCode)
+			rpc.errReply(result.Zxid, result.ErrCode)
 		}
 	}()
 }

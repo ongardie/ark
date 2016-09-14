@@ -427,14 +427,14 @@ func (sm *StateMachine) queueQuery(query *asyncQuery) {
 	session, ok := sm.sessions[query.conn.SessionId()]
 	if !ok {
 		log.Printf("Session %v not found", query.conn.SessionId())
-		query.respCh <- QueryResult{ErrCode: proto.ErrSessionExpired}
+		query.respCh <- QueryResult{Zxid: sm.lastApplied, ErrCode: proto.ErrSessionExpired}
 		return
 	}
 
 	if query.conn.ConnId() != session.connId {
 		log.Printf("Expired connection ID %v for session %v",
 			query.conn.ConnId(), query.conn.SessionId())
-		query.respCh <- QueryResult{ErrCode: proto.ErrSessionExpired}
+		query.respCh <- QueryResult{Zxid: sm.lastApplied, ErrCode: proto.ErrSessionExpired}
 		return
 	}
 
@@ -513,14 +513,14 @@ func (sm *StateMachine) queueQuery(query *asyncQuery) {
 	sm.registerWatches(register, query.conn)
 
 	if errCode != proto.ErrOk {
-		query.respCh <- QueryResult{ErrCode: errCode}
+		query.respCh <- QueryResult{Zxid: sm.lastApplied, ErrCode: errCode}
 		return
 	}
 	respBuf, err := jute.Encode(resp)
 	if err != nil {
 		log.Printf("Could not encode %+v. Closing connection", resp)
 		query.conn.Close()
-		query.respCh <- QueryResult{ErrCode: proto.ErrMarshallingError}
+		query.respCh <- QueryResult{Zxid: sm.lastApplied, ErrCode: proto.ErrMarshallingError}
 		return
 	}
 

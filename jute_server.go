@@ -317,14 +317,12 @@ func (conn *JuteConnection) process(msg []byte) error {
 		rpc.cmdId = conn.lastCmdId
 	}
 
-	respHeader := proto.ResponseHeader{
-		Xid:  rpc.reqHeader.Xid,
-		Zxid: 0, // usually overridden during reply
-		Err:  proto.ErrOk,
-	}
-
-	rpc.errReply = func(errCode proto.ErrCode) {
-		respHeader.Err = errCode
+	rpc.errReply = func(zxid proto.ZXID, errCode proto.ErrCode) {
+		respHeader := proto.ResponseHeader{
+			Xid:  rpc.reqHeader.Xid,
+			Zxid: zxid,
+			Err:  errCode,
+		}
 		log.Printf("Replying with error header to %v: %+v", rpc.opName, respHeader)
 		buf, err := conn.Encode(&respHeader)
 		if err != nil {
@@ -335,6 +333,11 @@ func (conn *JuteConnection) process(msg []byte) error {
 	}
 
 	rpc.reply = func(zxid proto.ZXID, msgBuf []byte) {
+		respHeader := proto.ResponseHeader{
+			Xid:  rpc.reqHeader.Xid,
+			Zxid: zxid,
+			Err:  proto.ErrOk,
+		}
 		headerBuf, err := conn.Encode(&respHeader)
 		if err != nil {
 			log.Printf("Error encoding response header to %v: %v", rpc.opName, err)
