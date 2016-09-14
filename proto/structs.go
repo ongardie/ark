@@ -175,8 +175,8 @@ type statResponse struct {
 //
 
 type CheckVersionRequest PathVersionRequest
-type closeRequest struct{}
-type closeResponse struct{}
+type CloseRequest struct{}
+type CloseResponse struct{}
 
 type ConnectRequest struct {
 	ProtocolVersion int32
@@ -422,7 +422,7 @@ type WatcherEvent struct {
 func RequestStructForOp(op OpCode) interface{} {
 	switch op {
 	case OpClose:
-		return &closeRequest{}
+		return &CloseRequest{}
 	case OpCreate:
 		return &CreateRequest{}
 	case OpDelete:
@@ -460,7 +460,7 @@ func RequestStructForOp(op OpCode) interface{} {
 func ResponseStructForOp(op OpCode) interface{} {
 	switch op {
 	case OpClose:
-		return &closeResponse{}
+		return &CloseResponse{}
 	case OpCreate:
 		return &CreateResponse{}
 	case OpDelete:

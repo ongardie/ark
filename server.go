@@ -120,7 +120,11 @@ func (s *Server) processCommand(rpc *RPC) {
 		case result := <-resultCh:
 			log.Printf("Committed entry %v", result.Index)
 			if result.ErrCode == proto.ErrOk {
-				rpc.reply(result.Index, result.Output)
+				if rpc.reqHeader.OpCode == proto.OpClose {
+					rpc.replyThenClose(result.Index, result.Output)
+				} else {
+					rpc.reply(result.Index, result.Output)
+				}
 			} else {
 				rpc.errReply(result.Index, result.ErrCode)
 			}

@@ -26,13 +26,14 @@ type ConnectRPC struct {
 }
 
 type RPC struct {
-	conn          statemachine.Connection
-	cmdId         statemachine.CommandId
-	lastCmdId     statemachine.CommandId
-	reqHeaderJute []byte
-	reqHeader     proto.RequestHeader
-	opName        string
-	req           []byte
-	errReply      func(proto.ZXID, proto.ErrCode)
-	reply         func(proto.ZXID, []byte)
+	conn           statemachine.Connection
+	cmdId          statemachine.CommandId
+	lastCmdId      statemachine.CommandId
+	reqHeaderJute  []byte
+	reqHeader      proto.RequestHeader
+	opName         string
+	req            []byte
+	errReply       func(proto.ZXID, proto.ErrCode)
+	reply          func(proto.ZXID, []byte)
+	replyThenClose func(proto.ZXID, []byte)
 }

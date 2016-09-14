@@ -14,7 +14,7 @@ import (
 
 type InfiniteQueue struct {
 	mutex  sync.Mutex
-	queue  [][]byte
+	queue  [][]byte // note: nil value means close connection
 	signal chan struct{}
 }
 
@@ -34,15 +34,15 @@ func (q *InfiniteQueue) Push(msg []byte) {
 	}
 }
 
-func (q *InfiniteQueue) Pop() []byte {
+func (q *InfiniteQueue) Pop() ([]byte, bool) {
 	q.mutex.Lock()
 	defer q.mutex.Unlock()
 	if len(q.queue) > 0 {
 		first := q.queue[0]
 		q.queue = q.queue[1:]
-		return first
+		return first, true
 	}
-	return nil
+	return nil, false
 }
 
 type JuteServer struct {
@@ -189,17 +189,22 @@ func (conn *JuteConnection) receiveLoop() {
 }
 
 func (conn *JuteConnection) toSend() []byte {
-	msg := conn.sendQueue.Pop()
-	for msg == nil {
+	for {
+		msg, ok := conn.sendQueue.Pop()
+		if ok {
+			if msg == nil {
+				conn.Close()
+				return nil
+			}
+			return msg
+		}
 		select {
 		case <-conn.sendQueue.signal:
 		case <-conn.closeCh:
 			conn.closeCh <- struct{}{}
 			return nil
 		}
-		msg = conn.sendQueue.Pop()
 	}
-	return msg
 }
 
 func (conn *JuteConnection) sendLoop() {
@@ -344,6 +349,11 @@ func (conn *JuteConnection) process(msg []byte) error {
 			return
 		}
 		conn.sendQueue.Push(append(headerBuf, msgBuf...))
+	}
+
+	rpc.replyThenClose = func(zxid proto.ZXID, msgBuf []byte) {
+		rpc.reply(zxid, msgBuf)
+		conn.sendQueue.Push(nil)
 	}
 
 	conn.server.handler(rpc)

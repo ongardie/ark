@@ -196,6 +196,11 @@ func (sm *StateMachine) applyConnect(ctx *context, cmdBuf []byte) ConnectResult 
 	}
 }
 
+func (sm *StateMachine) closeSession(ctx *context, req *proto.CloseRequest) (*proto.CloseResponse, proto.ErrCode) {
+	delete(sm.sessions, ctx.sessionId)
+	return &proto.CloseResponse{}, proto.ErrOk
+}
+
 func (sm *StateMachine) applyCommand(ctx *context, cmdBuf []byte) ([]byte, proto.ErrCode) {
 	reqHeader := proto.RequestHeader{}
 	reqBuf, err := jute.DecodeSome(cmdBuf, &reqHeader)
@@ -229,6 +234,11 @@ func (sm *StateMachine) applyCommand(ctx *context, cmdBuf []byte) ([]byte, proto
 	}
 
 	switch reqHeader.OpCode {
+	case proto.OpClose:
+		if req := new(proto.CloseRequest); decode(req) {
+			resp, errCode = sm.closeSession(ctx, req)
+		}
+
 	case proto.OpCreate:
 		if req := new(proto.CreateRequest); decode(req) {
 			tree, resp, notify, errCode = sm.tree.Create(ctx, req)
@@ -250,7 +260,9 @@ func (sm *StateMachine) applyCommand(ctx *context, cmdBuf []byte) ([]byte, proto
 		return nil, errCode
 	}
 	log.Printf("%v(%+v) -> %+v, %v notifies", opName, req2, resp, len(notify))
-	sm.tree = tree
+	if tree != nil {
+		sm.tree = tree
+	}
 	sm.notifyWatches(ctx.zxid, notify)
 
 	respBuf, err := jute.Encode(resp)
