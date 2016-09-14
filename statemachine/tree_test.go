@@ -81,7 +81,7 @@ func Test_tree_Create(t *testing.T) {
 	}
 }
 
-func Test_tree_GetChildren(t *testing.T) {
+func Test_tree_GetChildren2(t *testing.T) {
 	t0 := NewTree()
 	t1, _, _, err := t0.Create(ctx, &proto.CreateRequest{
 		Path: "/foo",
@@ -95,7 +95,7 @@ func Test_tree_GetChildren(t *testing.T) {
 	if err != proto.ErrOk {
 		t.Fatalf("Unexpected error: %v", err.Error())
 	}
-	resp, _, err := t2.GetChildren(ctx, &proto.GetChildren2Request{
+	resp, _, err := t2.GetChildren2(ctx, &proto.GetChildren2Request{
 		Path: "/",
 	})
 	if err != proto.ErrOk {

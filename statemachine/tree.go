@@ -111,7 +111,7 @@ func (p ComponentSortable) Len() int           { return len(p) }
 func (p ComponentSortable) Less(i, j int) bool { return p[i] < p[j] }
 func (p ComponentSortable) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
-func (t *Tree) GetChildren(ctx *context, req *proto.GetChildren2Request) (*proto.GetChildren2Response, RegisterEvents, proto.ErrCode) {
+func (t *Tree) GetChildren2(ctx *context, req *proto.GetChildren2Request) (*proto.GetChildren2Response, RegisterEvents, proto.ErrCode) {
 	var register RegisterEvents
 	resp := &proto.GetChildren2Response{}
 	var do func(node *Tree, components []proto.Component) proto.ErrCode

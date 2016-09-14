@@ -464,10 +464,15 @@ func (sm *StateMachine) queueQuery(query *asyncQuery) {
 	var register RegisterEvents
 	errCode := proto.ErrMarshallingError
 	switch query.opCode {
-	case proto.OpGetChildren2:
-		if req := new(proto.GetChildren2Request); decode(req) {
+	case proto.OpGetChildren:
+		if req := new(proto.GetChildrenRequest); decode(req) {
 			resp, register, errCode = sm.tree.GetChildren(ctx, req)
 			log.Printf("GetChildren(%+v) -> %+v", req, resp)
+		}
+	case proto.OpGetChildren2:
+		if req := new(proto.GetChildren2Request); decode(req) {
+			resp, register, errCode = sm.tree.GetChildren2(ctx, req)
+			log.Printf("GetChildren2(%+v) -> %+v", req, resp)
 		}
 	case proto.OpGetData:
 		if req := new(proto.GetDataRequest); decode(req) {
