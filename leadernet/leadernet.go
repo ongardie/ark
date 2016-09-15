@@ -24,7 +24,7 @@ type leaderConn struct {
 	ln      *LeaderNet
 	addr    raft.ServerAddress
 	netConn net.Conn
-	closed  zoosync.Broadcast
+	closed  *zoosync.Broadcast
 }
 
 type LeaderNet struct {
