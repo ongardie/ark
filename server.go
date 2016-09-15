@@ -201,6 +201,7 @@ func (s *Server) handler(rpc RPCish) {
 		if rpc.reqHeader.OpCode == proto.OpPing {
 			s.processPing(rpc)
 		} else if isReadOnly(rpc.reqHeader.OpCode) {
+			// TODO: somehow even a Query is supposed to substitute for pings
 			s.processQuery(rpc)
 		} else {
 			s.processCommand(rpc)

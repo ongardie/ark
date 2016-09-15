@@ -70,11 +70,11 @@ func (a *pingForwarder) handle(conn net.Conn) {
 			conn.Close()
 			return
 		}
-		log.Printf("Got ping for %v", sessionId)
-		if !a.stateMachine.Ping(sessionId) {
+		log.Printf("Got ping request over peer channel for session %v", sessionId)
+		if a.stateMachine.Ping(sessionId) {
 			err = sendSessionId(conn, sessionId)
 		} else {
-			log.Printf("Failed to ping %v", sessionId)
+			log.Printf("Failed to ping session %v (session not found)", sessionId)
 			err = sendSessionId(conn, 0-sessionId)
 		}
 		if err != nil {

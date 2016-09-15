@@ -57,7 +57,7 @@ func (a *logAppender) handle(conn net.Conn) {
 		go func() {
 			err := future.Error()
 			if err == nil {
-				log.Printf("Committed proxied command")
+				log.Printf("Committed proxied command at index %v", future.Index())
 			} else {
 				log.Printf("Failed to commit command (%v): closing connection", err)
 				conn.Close()
