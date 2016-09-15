@@ -79,11 +79,8 @@ func (a *logAppender) waitForReadError(conn net.Conn) {
 
 // Returns as soon as the cmd will be ordered relative to subsequent calls to
 // Append().
-func (a *logAppender) Append(cmd []byte) (errCh <-chan error, doneCh chan<- struct{}) {
-	_errCh := make(chan error, 1)
-	_doneCh := make(chan struct{}, 1)
-	errCh = _errCh
-	doneCh = _doneCh
+func (a *logAppender) Append(cmd []byte, doneCh <-chan struct{}) <-chan error {
+	errCh := make(chan error, 1)
 
 	conn, cached, err := a.dialer.Dial(time.Second)
 	if err == leadernet.ErrLocal {
@@ -92,14 +89,14 @@ func (a *logAppender) Append(cmd []byte) (errCh <-chan error, doneCh chan<- stru
 		go func() {
 			err := future.Error()
 			if err != nil {
-				_errCh <- err
+				errCh <- err
 			}
 		}()
-		return
+		return errCh
 	}
 	if err != nil {
-		_errCh <- err
-		return
+		errCh <- err
+		return errCh
 	}
 
 	if !cached {
@@ -110,16 +107,16 @@ func (a *logAppender) Append(cmd []byte) (errCh <-chan error, doneCh chan<- stru
 	log.Printf("Forwarding command")
 	err = intframe.Send(conn, cmd)
 	if err != nil {
-		_errCh <- err
+		errCh <- err
 		conn.Close()
-		return
+		return errCh
 	}
 	go func() {
 		select {
 		case <-conn.Closed():
-			_errCh <- errors.New("connection to leader closed")
-		case <-_doneCh:
+			errCh <- errors.New("connection to leader closed")
+		case <-doneCh:
 		}
 	}()
-	return
+	return errCh
 }

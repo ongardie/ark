@@ -26,20 +26,14 @@ type StateMachine struct {
 	tree          *Tree
 	sessions      map[proto.SessionId]*Session
 	watches       map[TreeEvent]Connections
-	output        map[fullCommandId]chan<- CommandResult
-	connectOutput map[string]chan<- ConnectResult
+	output        map[fullCommandId]CommandResultFn
+	connectOutput map[string]ConnectResultFn
 }
 
 type fullCommandId struct {
 	session    proto.SessionId
 	connection ConnectionId
 	cmd        CommandId
-}
-
-type CommandResult struct {
-	Index   proto.ZXID
-	Output  []byte
-	ErrCode proto.ErrCode
 }
 
 type Connection interface {
@@ -95,11 +89,9 @@ type RegisterEvents []TreeEvent
 type ConnectionId int64
 type CommandId int64
 
-type ConnectResult struct {
-	Resp    *proto.ConnectResponse
-	ConnId  ConnectionId
-	ErrCode proto.ErrCode
-}
+type CommandResultFn func(index proto.ZXID, output []byte, errCode proto.ErrCode)
+type ConnectResultFn func(resp *proto.ConnectResponse, connId ConnectionId, errCode proto.ErrCode)
+type QueryResultFn func(zxid proto.ZXID, output []byte, errCode proto.ErrCode)
 
 type Session struct {
 	password  proto.SessionPassword
@@ -116,8 +108,8 @@ func NewStateMachine() *StateMachine {
 		tree:          NewTree(),
 		sessions:      make(map[proto.SessionId]*Session),
 		watches:       make(map[TreeEvent]Connections),
-		output:        make(map[fullCommandId]chan<- CommandResult),
-		connectOutput: make(map[string]chan<- ConnectResult),
+		output:        make(map[fullCommandId]CommandResultFn),
+		connectOutput: make(map[string]ConnectResultFn),
 	}
 }
 
@@ -193,12 +185,13 @@ func (sm *StateMachine) registerWatches(events RegisterEvents, conn Connection) 
 	}
 }
 
-func (sm *StateMachine) applyConnect(ctx *context, cmdBuf []byte) ConnectResult {
+func (sm *StateMachine) applyConnect(ctx *context, cmdBuf []byte, resultFn ConnectResultFn) {
 	req := proto.ConnectRequest{}
 	err := jute.Decode(cmdBuf, &req)
 	if err != nil {
 		log.Printf("Error decoding connect command: %v", err)
-		return ConnectResult{ErrCode: proto.ErrBadArguments}
+		resultFn(nil, 0, proto.ErrBadArguments)
+		return
 	}
 	log.Printf("State machine got connect request %+v", req)
 
@@ -221,27 +214,26 @@ func (sm *StateMachine) applyConnect(ctx *context, cmdBuf []byte) ConnectResult 
 		session, ok = sm.sessions[sessionId]
 		if !ok {
 			log.Printf("Session %v not found", sessionId)
-			return ConnectResult{ErrCode: proto.ErrSessionExpired}
+			resultFn(nil, 0, proto.ErrSessionExpired)
+			return
 		}
 		if !bytes.Equal(session.password, req.Passwd) {
 			log.Printf("Bad pasword for session %v", sessionId)
-			return ConnectResult{ErrCode: proto.ErrSessionExpired}
+			resultFn(nil, 0, proto.ErrSessionExpired)
+			return
 		}
 		session.connId++
 	}
 	session.lastCmdId = ctx.cmdId
 	session.timeout = time.Millisecond * time.Duration(req.Timeout)
 	session.lease = session.timeout
-	return ConnectResult{
-		Resp: &proto.ConnectResponse{
-			ProtocolVersion: 0,
-			Timeout:         int32(session.timeout / time.Millisecond),
-			SessionID:       sessionId,
-			Passwd:          session.password,
-		},
-		ConnId:  session.connId,
-		ErrCode: proto.ErrOk,
+	resp := &proto.ConnectResponse{
+		ProtocolVersion: 0,
+		Timeout:         int32(session.timeout / time.Millisecond),
+		SessionID:       sessionId,
+		Passwd:          session.password,
 	}
+	resultFn(resp, session.connId, proto.ErrOk)
 }
 
 func (sm *StateMachine) applyExpire(ctx *context, cmdBuf []byte) {
@@ -364,22 +356,23 @@ func (sm *StateMachine) Apply(entry *raft.Log) (unused interface{}) {
 
 	reply := func(output []byte, errCode proto.ErrCode) {
 		fullId := fullCommandId{ctx.sessionId, ctx.connId, ctx.cmdId}
-		replyCh, ok := sm.output[fullId]
+		replyFn, ok := sm.output[fullId]
 		if !ok {
 			return
 		}
-		replyCh <- CommandResult{Index: ctx.zxid, Output: output, ErrCode: errCode}
+		replyFn(ctx.zxid, output, errCode)
 		delete(sm.output, fullId)
 	}
 
 	switch header.CmdType {
 	case ConnectCommand:
-		result := sm.applyConnect(ctx, cmdBuf)
-		replyCh, ok := sm.connectOutput[string(ctx.rand)]
+		resultFn, ok := sm.connectOutput[string(ctx.rand)]
 		if ok {
-			replyCh <- result
 			delete(sm.connectOutput, string(ctx.rand))
+		} else {
+			resultFn = func(*proto.ConnectResponse, ConnectionId, proto.ErrCode) {}
 		}
+		sm.applyConnect(ctx, cmdBuf, resultFn)
 		return
 
 	case ExpireCommand:
@@ -431,20 +424,17 @@ func (sm *StateMachine) Apply(entry *raft.Log) (unused interface{}) {
 }
 
 func (sm *StateMachine) ExpectCommand(
-	session proto.SessionId, connection ConnectionId, cmd CommandId) <-chan CommandResult {
+	session proto.SessionId, connection ConnectionId, cmd CommandId,
+	fn CommandResultFn) {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
-	ch := make(chan CommandResult, 1)
-	sm.output[fullCommandId{session, connection, cmd}] = ch
-	return ch
+	sm.output[fullCommandId{session, connection, cmd}] = fn
 }
 
-func (sm *StateMachine) ExpectConnect(rand []byte) <-chan ConnectResult {
+func (sm *StateMachine) ExpectConnect(rand []byte, fn ConnectResultFn) {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
-	ch := make(chan ConnectResult, 1)
-	sm.connectOutput[string(rand)] = ch
-	return ch
+	sm.connectOutput[string(rand)] = fn
 }
 
 func (sm *StateMachine) CancelCommandResult(
@@ -460,51 +450,43 @@ func (sm *StateMachine) CancelConnectResult(rand []byte) {
 	delete(sm.connectOutput, string(rand))
 }
 
-type QueryResult struct {
-	Zxid    proto.ZXID
-	Output  []byte
-	ErrCode proto.ErrCode
-}
-
 type asyncQuery struct {
 	conn      Connection
 	lastCmdId CommandId
 	opCode    proto.OpCode
 	reqBuf    []byte
-	respCh    chan<- QueryResult
+	resultFn  QueryResultFn
 }
 
 func (sm *StateMachine) Query(
 	conn Connection, lastCmdId CommandId,
-	opCode proto.OpCode, reqBuf []byte) <-chan QueryResult {
-	respCh := make(chan QueryResult, 1)
+	opCode proto.OpCode, reqBuf []byte, resultFn QueryResultFn) {
 	query := &asyncQuery{
 		conn:      conn,
 		lastCmdId: lastCmdId,
 		opCode:    opCode,
 		reqBuf:    reqBuf,
-		respCh:    respCh,
+		resultFn:  resultFn,
 	}
 	log.Printf("Created async query %+v", query)
 
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
 	sm.queueQuery(query)
-	return respCh
 }
 
 func (sm *StateMachine) queueQuery(query *asyncQuery) {
 	session, ok := sm.sessions[query.conn.SessionId()]
 	if !ok {
 		log.Printf("Session %v not found", query.conn.SessionId())
-		query.respCh <- QueryResult{Zxid: sm.lastApplied, ErrCode: proto.ErrSessionExpired}
+		query.resultFn(sm.lastApplied, nil, proto.ErrSessionExpired)
 		return
 	}
 
 	if query.conn.ConnId() != session.connId {
 		log.Printf("Expired connection ID %v for session %v",
 			query.conn.ConnId(), query.conn.SessionId())
-		query.respCh <- QueryResult{Zxid: sm.lastApplied, ErrCode: proto.ErrSessionExpired}
+		query.resultFn(sm.lastApplied, nil, proto.ErrSessionExpired)
 		return
 	}
 
@@ -583,18 +565,18 @@ func (sm *StateMachine) queueQuery(query *asyncQuery) {
 	sm.registerWatches(register, query.conn)
 
 	if errCode != proto.ErrOk {
-		query.respCh <- QueryResult{Zxid: sm.lastApplied, ErrCode: errCode}
+		query.resultFn(sm.lastApplied, nil, errCode)
 		return
 	}
 	respBuf, err := jute.Encode(resp)
 	if err != nil {
 		log.Printf("Could not encode %+v. Closing connection", resp)
 		query.conn.Close()
-		query.respCh <- QueryResult{Zxid: sm.lastApplied, ErrCode: proto.ErrMarshallingError}
+		query.resultFn(sm.lastApplied, nil, proto.ErrMarshallingError)
 		return
 	}
 
-	query.respCh <- QueryResult{Zxid: sm.lastApplied, Output: respBuf, ErrCode: proto.ErrOk}
+	query.resultFn(sm.lastApplied, respBuf, proto.ErrOk)
 }
 
 func (sm *StateMachine) Snapshot() (raft.FSMSnapshot, error) {

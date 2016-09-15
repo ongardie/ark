@@ -73,22 +73,25 @@ func (s *Server) processConnect(rpc *ConnectRPC) {
 	}
 	buf := append(append([]byte{1}, headerBuf...), rpc.reqJute...)
 
-	resultCh := s.stateMachine.ExpectConnect(header.Rand)
-	errCh, doneCh := s.logAppender.Append(buf)
-	go func() {
-		select {
-		case result := <-resultCh:
-			log.Printf("Committed connect request with output %+v", result)
-			if result.ErrCode != proto.ErrOk {
-				rpc.errReply(result.ErrCode)
+	doneCh := make(chan struct{})
+	s.stateMachine.ExpectConnect(header.Rand,
+		func(resp *proto.ConnectResponse, connId statemachine.ConnectionId, errCode proto.ErrCode) {
+			log.Printf("Committed connect request with output %+v", resp)
+			if errCode != proto.ErrOk {
+				rpc.errReply(errCode)
 			} else {
-				rpc.reply(result.Resp, result.ConnId)
+				rpc.reply(resp, connId)
 			}
 			close(doneCh)
+		})
+	errCh := s.logAppender.Append(buf, doneCh)
+	go func() {
+		select {
 		case err := <-errCh:
 			log.Printf("Failed to commit connect command: %v", err)
 			rpc.conn.Close()
 			s.stateMachine.CancelConnectResult(header.Rand)
+		case <-doneCh:
 		}
 	}()
 }
@@ -114,26 +117,29 @@ func (s *Server) processCommand(rpc *RPC) {
 	buf = append(buf, rpc.reqHeaderJute...)
 	buf = append(buf, rpc.req...)
 
-	resultCh := s.stateMachine.ExpectCommand(header.SessionId, header.ConnId, header.CmdId)
-	errCh, doneCh := s.logAppender.Append(buf)
-	go func() {
-		select {
-		case result := <-resultCh:
-			log.Printf("Committed entry %v", result.Index)
-			if result.ErrCode == proto.ErrOk {
+	doneCh := make(chan struct{})
+	s.stateMachine.ExpectCommand(header.SessionId, header.ConnId, header.CmdId,
+		func(index proto.ZXID, output []byte, errCode proto.ErrCode) {
+			log.Printf("Committed entry %v", index)
+			if errCode == proto.ErrOk {
 				if rpc.reqHeader.OpCode == proto.OpClose {
-					rpc.replyThenClose(result.Index, result.Output)
+					rpc.replyThenClose(index, output)
 				} else {
-					rpc.reply(result.Index, result.Output)
+					rpc.reply(index, output)
 				}
 			} else {
-				rpc.errReply(result.Index, result.ErrCode)
+				rpc.errReply(index, errCode)
 			}
 			close(doneCh)
+		})
+	errCh := s.logAppender.Append(buf, doneCh)
+	go func() {
+		select {
 		case err := <-errCh:
 			log.Printf("Failed to commit %v command: %v", rpc.opName, err)
 			rpc.conn.Close()
 			s.stateMachine.CancelCommandResult(header.SessionId, header.ConnId, header.CmdId)
+		case <-doneCh:
 		}
 	}()
 }
@@ -155,18 +161,15 @@ func (s *Server) processPing(rpc *RPC) {
 
 func (s *Server) processQuery(rpc *RPC) {
 	log.Printf("Processing %v query", rpc.opName)
-	queryCh := s.stateMachine.Query(rpc.conn,
-		rpc.lastCmdId,
-		rpc.reqHeader.OpCode, rpc.req)
-	go func() {
-		result := <-queryCh
-		log.Printf("Got result for %v query", rpc.opName)
-		if result.ErrCode == proto.ErrOk {
-			rpc.reply(result.Zxid, result.Output)
-		} else {
-			rpc.errReply(result.Zxid, result.ErrCode)
-		}
-	}()
+	s.stateMachine.Query(rpc.conn, rpc.lastCmdId, rpc.reqHeader.OpCode, rpc.req,
+		func(zxid proto.ZXID, output []byte, errCode proto.ErrCode) {
+			log.Printf("Got result for %v query", rpc.opName)
+			if errCode == proto.ErrOk {
+				rpc.reply(zxid, output)
+			} else {
+				rpc.errReply(zxid, errCode)
+			}
+		})
 }
 
 func isReadOnly(opCode proto.OpCode) bool {
