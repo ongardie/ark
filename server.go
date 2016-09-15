@@ -42,7 +42,8 @@ type Server struct {
 		transport   raft.Transport
 		handle      *raft.Raft
 	}
-	logAppender *logAppender
+	logAppender   *logAppender
+	pingForwarder *pingForwarder
 }
 
 func getRand(n int) []byte {
@@ -139,8 +140,14 @@ func (s *Server) processCommand(rpc *RPC) {
 
 func (s *Server) processPing(rpc *RPC) {
 	log.Printf("Processing ping")
-	s.stateMachine.Ping(rpc.conn)
-	rpc.reply(0, []byte{})
+	err := s.pingForwarder.Ping(rpc.conn.SessionId())
+	if err == nil {
+		rpc.reply(0, []byte{})
+	} else {
+		log.Printf("Ping forwarder error: %v", err)
+		rpc.conn.Close()
+		return
+	}
 }
 
 func (s *Server) processQuery(rpc *RPC) {
@@ -196,8 +203,9 @@ func (s *Server) handler(rpc RPCish) {
 }
 
 const (
-	RAFT_PROTO          byte = 10
-	ZOOLATER_PEER_PROTO byte = 11
+	RAFT_PROTO        byte = 10
+	COMMAND_FORWARDER byte = 11
+	PING_FORWARDER    byte = 12
 )
 
 func (s *Server) startRaft(streamLayer raft.StreamLayer) error {
@@ -369,7 +377,8 @@ func main() {
 		log.Printf("Unable to start peer transport: %v\n", err)
 		os.Exit(1)
 	}
-	streamLayers := NewDemuxStreamLayer(stream, RAFT_PROTO, ZOOLATER_PEER_PROTO)
+	streamLayers := NewDemuxStreamLayer(stream,
+		RAFT_PROTO, COMMAND_FORWARDER, PING_FORWARDER)
 
 	err = s.startRaft(streamLayers[RAFT_PROTO])
 	if err != nil {
@@ -377,7 +386,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	s.logAppender = newLogAppender(s.raft.handle, streamLayers[ZOOLATER_PEER_PROTO])
+	s.logAppender = newLogAppender(s.raft.handle, streamLayers[COMMAND_FORWARDER])
+	s.pingForwarder = newPingForwarder(s.stateMachine, s.raft.handle, streamLayers[PING_FORWARDER])
 
 	err = s.serve()
 	if err != nil {
