@@ -1,0 +1,125 @@
+/*
+ * Copyright (c) 2016, salesforce.com, inc.
+ * All rights reserved.
+ */
+
+package main
+
+import (
+	"errors"
+	"io"
+	"log"
+	"net"
+	"time"
+
+	"github.com/hashicorp/raft"
+
+	"salesforce.com/zoolater/intframe"
+	"salesforce.com/zoolater/leadernet"
+)
+
+type logAppender struct {
+	raft   *raft.Raft
+	dialer *leadernet.LeaderNet
+}
+
+func newLogAppender(raft *raft.Raft, streamLayer raft.StreamLayer) *logAppender {
+	a := &logAppender{
+		raft:   raft,
+		dialer: leadernet.New(raft, streamLayer),
+	}
+	go a.listen(streamLayer)
+	return a
+}
+
+func (a *logAppender) listen(streamLayer raft.StreamLayer) {
+	for {
+		conn, err := streamLayer.Accept()
+		if err != nil {
+			log.Printf("accept error: %v", err)
+			continue
+		}
+		log.Printf("accepted inbound appender connection")
+		go a.handle(conn)
+	}
+}
+
+func (a *logAppender) handle(conn net.Conn) {
+	for {
+		cmd, err := intframe.Receive(conn)
+		if err != nil {
+			log.Printf("Error receiving proxied command (%v), closing connection", err)
+			conn.Close()
+			return
+		}
+		log.Printf("Locally applying proxied command")
+		future := a.raft.Apply(cmd, 0)
+		go func() {
+			err := future.Error()
+			if err == nil {
+				log.Printf("Committed proxied command")
+			} else {
+				log.Printf("Failed to commit command (%v): closing connection", err)
+				conn.Close()
+			}
+		}()
+	}
+}
+
+func (a *logAppender) waitForReadError(conn net.Conn) {
+	buf := make([]byte, 1)
+	_, err := io.ReadFull(conn, buf)
+	if err != nil {
+		log.Printf("Proxy connection read error: %v", err)
+	} else {
+		log.Printf("Leader sent unexpected byte over proxy connection")
+	}
+	conn.Close()
+}
+
+// Returns as soon as the cmd will be ordered relative to subsequent calls to
+// Append().
+func (a *logAppender) Append(cmd []byte) (errCh <-chan error, doneCh chan<- struct{}) {
+	_errCh := make(chan error, 1)
+	_doneCh := make(chan struct{}, 1)
+	errCh = _errCh
+	doneCh = _doneCh
+
+	conn, cached, err := a.dialer.Dial(time.Second)
+	if err == leadernet.ErrLocal {
+		log.Printf("Appending command locally")
+		future := a.raft.Apply(cmd, 0)
+		go func() {
+			err := future.Error()
+			if err != nil {
+				_errCh <- err
+			}
+		}()
+		return
+	}
+	if err != nil {
+		_errCh <- err
+		return
+	}
+
+	if !cached {
+		log.Printf("Forwarding commands to %v", conn.RemoteAddr())
+		go a.waitForReadError(conn)
+	}
+
+	log.Printf("Forwarding command")
+	err = intframe.Send(conn, cmd)
+	if err != nil {
+		_errCh <- err
+		conn.Close()
+		return
+	}
+	go func() {
+		select {
+		case <-conn.Closed():
+			_errCh <- errors.New("connection to leader closed")
+		case <-_doneCh:
+		}
+	}()
+	return
+}

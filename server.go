@@ -42,7 +42,7 @@ type Server struct {
 		transport   raft.Transport
 		handle      *raft.Raft
 	}
-	leaderProxy *leaderProxy
+	logAppender *logAppender
 }
 
 func getRand(n int) []byte {
@@ -73,7 +73,7 @@ func (s *Server) processConnect(rpc *ConnectRPC) {
 	buf := append(append([]byte{1}, headerBuf...), rpc.reqJute...)
 
 	resultCh := s.stateMachine.ExpectConnect(header.Rand)
-	errCh, doneCh := s.leaderProxy.Apply(buf)
+	errCh, doneCh := s.logAppender.Append(buf)
 	go func() {
 		select {
 		case result := <-resultCh:
@@ -114,7 +114,7 @@ func (s *Server) processCommand(rpc *RPC) {
 	buf = append(buf, rpc.req...)
 
 	resultCh := s.stateMachine.ExpectCommand(header.SessionId, header.ConnId, header.CmdId)
-	errCh, doneCh := s.leaderProxy.Apply(buf)
+	errCh, doneCh := s.logAppender.Append(buf)
 	go func() {
 		select {
 		case result := <-resultCh:
@@ -377,7 +377,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	s.leaderProxy = newLeaderProxy(s.raft.handle, streamLayers[ZOOLATER_PEER_PROTO])
+	s.logAppender = newLogAppender(s.raft.handle, streamLayers[ZOOLATER_PEER_PROTO])
 
 	err = s.serve()
 	if err != nil {
