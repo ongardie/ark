@@ -267,30 +267,38 @@ func (conn *JuteConnection) processConnReq(reqBuf []byte) error {
 		return fmt.Errorf("unexpected bytes after ConnectRequest: %#v", more)
 	}
 	log.Printf("connection request: %#v", req)
+
+	reply := func(resp *proto.ConnectResponse, connId statemachine.ConnectionId) {
+		log.Printf("Replying to connection request with %#v", resp)
+		buf, err := conn.Encode(resp)
+		if err != nil {
+			log.Printf("Error serializing ConnectResponse: %v", err)
+			return
+		}
+		if sendReadOnlyByte {
+			buf = append(buf, 0)
+		}
+		conn.sessionId = resp.SessionID
+		conn.connId = connId
+		conn.lastCmdId = 1
+		conn.sendQueue.Push(buf)
+	}
 	conn.server.handler(&ConnectRPC{
 		conn:    conn,
 		req:     req,
 		reqJute: reqBuf[:len(reqBuf)-len(more)],
 		errReply: func(errCode proto.ErrCode) {
-			// TODO: what am I supposed to do with this?
 			log.Printf("Can't satisfy connection request (%v), dropping", errCode.Error())
-			conn.Close()
-		},
-		reply: func(resp *proto.ConnectResponse, connId statemachine.ConnectionId) {
-			log.Printf("Replying to connection request with %#v", resp)
-			buf, err := conn.Encode(resp)
-			if err != nil {
-				log.Printf("Error serializing ConnectResponse: %v", err)
-				return
+			// There's no place to send back the error code. ZooKeeper seems to send
+			// back all zeros instead to indicate session expired.
+			if errCode == proto.ErrSessionExpired {
+				reply(&proto.ConnectResponse{}, 0)
+				conn.sendQueue.Push(nil)
+			} else {
+				conn.Close()
 			}
-			if sendReadOnlyByte {
-				buf = append(buf, 0)
-			}
-			conn.sessionId = resp.SessionID
-			conn.connId = connId
-			conn.lastCmdId = 1
-			conn.sendQueue.Push(buf)
 		},
+		reply: reply,
 	})
 	return nil
 }

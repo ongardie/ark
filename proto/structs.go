@@ -182,14 +182,14 @@ type CloseResponse struct{}
 type ConnectRequest struct {
 	ProtocolVersion int32
 	LastZxidSeen    ZXID
-	TimeOut         int32
+	Timeout         int32
 	SessionID       SessionId
 	Passwd          SessionPassword
 }
 
 type ConnectResponse struct {
 	ProtocolVersion int32
-	TimeOut         int32
+	Timeout         int32
 	SessionID       SessionId
 	Passwd          SessionPassword
 }

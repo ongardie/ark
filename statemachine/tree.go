@@ -80,11 +80,11 @@ func (t *Tree) lookup(path proto.Path) *Tree {
 }
 
 // TODO: O(n) probably isn't ok
-func (t *Tree) CloseSession(ctx *context, req *proto.CloseRequest) (*Tree, *proto.CloseResponse, NotifyEvents, proto.ErrCode) {
+func (t *Tree) ExpireSession(zxid proto.ZXID, sessionId proto.SessionId) (*Tree, NotifyEvents) {
 	var notify NotifyEvents
 	var do func(components []proto.Component, node *Tree) *Tree
 	do = func(components []proto.Component, node *Tree) *Tree {
-		if node.stat.EphemeralOwner == ctx.sessionId {
+		if node.stat.EphemeralOwner == sessionId {
 			notify = append(notify,
 				TreeEvent{joinPath(components), proto.EventNodeDeleted},
 				TreeEvent{joinPath(components[:len(components)-1]), proto.EventNodeChildrenChanged})
@@ -94,7 +94,7 @@ func (t *Tree) CloseSession(ctx *context, req *proto.CloseRequest) (*Tree, *prot
 			newChild := do(append(components, name), child)
 			if newChild == nil {
 				node = node.withoutChild(name)
-				node.stat.Pzxid = ctx.zxid
+				node.stat.Pzxid = zxid
 				node.stat.Cversion += 1 // TODO: overflow?
 				node.stat.NumChildren--
 			} else if child != newChild {
@@ -104,6 +104,11 @@ func (t *Tree) CloseSession(ctx *context, req *proto.CloseRequest) (*Tree, *prot
 		return node
 	}
 	root := do([]proto.Component{}, t)
+	return root, notify
+}
+
+func (t *Tree) CloseSession(ctx *context, req *proto.CloseRequest) (*Tree, *proto.CloseResponse, NotifyEvents, proto.ErrCode) {
+	root, notify := t.ExpireSession(ctx.zxid, ctx.sessionId)
 	return root, &proto.CloseResponse{}, notify, proto.ErrOk
 }
 

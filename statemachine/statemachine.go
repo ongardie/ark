@@ -67,6 +67,7 @@ const (
 	NoOpCommand    CommandType = 0
 	NormalCommand              = 1
 	ConnectCommand             = 2
+	ExpireCommand              = 3
 )
 
 // This is preceded by a 1-byte version number set to 1.
@@ -77,6 +78,10 @@ type CommandHeader1 struct {
 	CmdId     CommandId
 	Time      int64
 	Rand      []byte
+}
+
+type ExpireRequest struct {
+	Sessions []proto.SessionId
 }
 
 type TreeEvent struct {
@@ -101,6 +106,8 @@ type Session struct {
 	connId    ConnectionId
 	lastCmdId CommandId
 	queries   []*asyncQuery // these are waiting for lastCmdId to advance
+	timeout   time.Duration
+	lease     time.Duration
 }
 
 func NewStateMachine() *StateMachine {
@@ -111,6 +118,46 @@ func NewStateMachine() *StateMachine {
 		watches:       make(map[TreeEvent]Connections),
 		output:        make(map[fullCommandId]chan<- CommandResult),
 		connectOutput: make(map[string]chan<- ConnectResult),
+	}
+}
+
+func (sm *StateMachine) Ping(sessionId proto.SessionId) bool {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+	session, ok := sm.sessions[sessionId]
+	if ok {
+		session.lease = session.timeout
+		return true
+	}
+	return false
+}
+
+func (sm *StateMachine) ResetLeases() {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+	log.Printf("Resetting leases")
+	for _, session := range sm.sessions {
+		session.lease = session.timeout
+	}
+}
+
+func (sm *StateMachine) Elapsed(duration time.Duration) *ExpireRequest {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+	expire := &ExpireRequest{}
+	for sessionId, session := range sm.sessions {
+		if session.lease > duration {
+			session.lease -= duration
+		} else {
+			session.lease = 0
+			log.Printf("Session %v is out of time", sessionId)
+			expire.Sessions = append(expire.Sessions, sessionId)
+		}
+	}
+	if len(expire.Sessions) > 0 {
+		return expire
+	} else {
+		return nil
 	}
 }
 
@@ -164,9 +211,8 @@ func (sm *StateMachine) applyConnect(ctx *context, cmdBuf []byte) ConnectResult 
 		}
 		sessionId = proto.SessionId(ctx.zxid)
 		session = &Session{
-			password:  ctx.rand[:proto.SessionPasswordLen],
-			connId:    1,
-			lastCmdId: ctx.cmdId,
+			password: ctx.rand[:proto.SessionPasswordLen],
+			connId:   1,
 		}
 		sm.sessions[sessionId] = session
 	} else { // attach to existing session
@@ -182,12 +228,14 @@ func (sm *StateMachine) applyConnect(ctx *context, cmdBuf []byte) ConnectResult 
 			return ConnectResult{ErrCode: proto.ErrSessionExpired}
 		}
 		session.connId++
-		session.lastCmdId = ctx.cmdId
 	}
+	session.lastCmdId = ctx.cmdId
+	session.timeout = time.Millisecond * time.Duration(req.Timeout)
+	session.lease = session.timeout
 	return ConnectResult{
 		Resp: &proto.ConnectResponse{
-			ProtocolVersion: 12, // TODO: set this like ZooKeeper does
-			TimeOut:         req.TimeOut,
+			ProtocolVersion: 0,
+			Timeout:         int32(session.timeout / time.Millisecond),
 			SessionID:       sessionId,
 			Passwd:          session.password,
 		},
@@ -196,9 +244,19 @@ func (sm *StateMachine) applyConnect(ctx *context, cmdBuf []byte) ConnectResult 
 	}
 }
 
-func (sm *StateMachine) closeSession(ctx *context, req *proto.CloseRequest) (*proto.CloseResponse, proto.ErrCode) {
-	delete(sm.sessions, ctx.sessionId)
-	return &proto.CloseResponse{}, proto.ErrOk
+func (sm *StateMachine) applyExpire(ctx *context, cmdBuf []byte) {
+	req := ExpireRequest{}
+	err := jute.Decode(cmdBuf, &req)
+	if err != nil {
+		log.Printf("Error decoding expire list: %v", err)
+		return
+	}
+	for _, sessionId := range req.Sessions {
+		delete(sm.sessions, sessionId)
+		tree, notify := sm.tree.ExpireSession(ctx.zxid, sessionId)
+		sm.tree = tree
+		sm.notifyWatches(ctx.zxid, notify)
+	}
 }
 
 func (sm *StateMachine) applyCommand(ctx *context, cmdBuf []byte) ([]byte, proto.ErrCode) {
@@ -324,6 +382,10 @@ func (sm *StateMachine) Apply(entry *raft.Log) (unused interface{}) {
 		}
 		return
 
+	case ExpireCommand:
+		sm.applyExpire(ctx, cmdBuf)
+		return
+
 	case NoOpCommand:
 		break
 	case NormalCommand:
@@ -396,9 +458,6 @@ func (sm *StateMachine) CancelConnectResult(rand []byte) {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
 	delete(sm.connectOutput, string(rand))
-}
-
-func (sm *StateMachine) Ping(conn Connection) {
 }
 
 type QueryResult struct {

@@ -333,6 +333,68 @@ func (s *Server) serve() error {
 	select {} // block forever
 }
 
+func isLeader(r *raft.Raft) bool {
+	return r.State() == raft.Leader
+}
+func getTerm(r *raft.Raft) uint64 {
+	str := r.Stats()["term"]
+	var term uint64
+	_, err := fmt.Sscanf(str, "%d", &term)
+	if err != nil {
+		log.Fatalf("sscanf failed to convert '%v' to uint64: %v", str, err)
+	}
+	return term
+}
+
+func (s *Server) expireSessions() {
+	const tick = 10 * time.Millisecond
+	raft := s.raft.handle
+
+	for {
+		// Wait for leadership to start timing
+		for !isLeader(raft) {
+			time.Sleep(100 * time.Millisecond)
+		}
+		termStart := getTerm(raft)
+		s.stateMachine.ResetLeases()
+
+		for {
+			time.Sleep(tick)
+			if !isLeader(raft) || getTerm(raft) != termStart {
+				break
+			}
+			// A tick elapsed while still leader
+			expire := s.stateMachine.Elapsed(tick)
+			if expire != nil {
+				header := statemachine.CommandHeader1{
+					CmdType:   statemachine.ExpireCommand,
+					SessionId: 0,
+					ConnId:    0,
+					CmdId:     0,
+					Time:      time.Now().Unix(),
+					Rand:      getRand(proto.SessionPasswordLen),
+				}
+				headerBuf, err := jute.Encode(&header)
+				if err != nil {
+					log.Printf("Failed to encode expire log entry header: %v", err)
+					break
+				}
+				cmdBuf, err := jute.Encode(expire)
+				if err != nil {
+					log.Printf("Failed to encode expire list: %v", err)
+					break
+				}
+				buf := append(append([]byte{1}, headerBuf...), cmdBuf...)
+				err = raft.Apply(buf, 0).Error()
+				if err != nil {
+					log.Printf("Failed to commit expire command: %v", err)
+					break
+				}
+			}
+		}
+	}
+}
+
 func main() {
 	s := &Server{}
 
@@ -388,6 +450,8 @@ func main() {
 
 	s.logAppender = newLogAppender(s.raft.handle, streamLayers[COMMAND_FORWARDER])
 	s.pingForwarder = newPingForwarder(s.stateMachine, s.raft.handle, streamLayers[PING_FORWARDER])
+
+	go s.expireSessions()
 
 	err = s.serve()
 	if err != nil {

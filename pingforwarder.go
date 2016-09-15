@@ -69,7 +69,12 @@ func (a *pingForwarder) handle(conn net.Conn) {
 			return
 		}
 		log.Printf("Got ping for %v", sessionId)
-		// TODO
+		if !a.stateMachine.Ping(sessionId) {
+			log.Printf("Failed to ping %v", sessionId)
+			// TODO
+			conn.Close()
+			return
+		}
 		err = sendSessionId(conn, sessionId)
 		if err != nil {
 			log.Printf("Error sending pong (%v), closing connection", err)
@@ -104,7 +109,9 @@ func (a *pingForwarder) Ping(sessionId proto.SessionId) error {
 	conn, cached, err := a.dialer.Dial(time.Second)
 	if err == leadernet.ErrLocal {
 		log.Printf("Handling ping for %v locally", sessionId)
-		// TODO
+		if !a.stateMachine.Ping(sessionId) {
+			return errors.New("session not found")
+		}
 		return nil
 	}
 	if err != nil {
