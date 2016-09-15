@@ -20,6 +20,8 @@ import (
 	"salesforce.com/zoolater/statemachine"
 )
 
+var errSessionExpired = errors.New("session not found")
+
 type pingForwarder struct {
 	stateMachine *statemachine.StateMachine
 	dialer       *leadernet.LeaderNet
@@ -70,12 +72,11 @@ func (a *pingForwarder) handle(conn net.Conn) {
 		}
 		log.Printf("Got ping for %v", sessionId)
 		if !a.stateMachine.Ping(sessionId) {
+			err = sendSessionId(conn, sessionId)
+		} else {
 			log.Printf("Failed to ping %v", sessionId)
-			// TODO
-			conn.Close()
-			return
+			err = sendSessionId(conn, 0-sessionId)
 		}
-		err = sendSessionId(conn, sessionId)
 		if err != nil {
 			log.Printf("Error sending pong (%v), closing connection", err)
 			conn.Close()
@@ -93,10 +94,15 @@ func (a *pingForwarder) recvPongs(conn net.Conn) {
 			return
 		}
 		a.pendingMutex.Lock()
+		var reply error
+		if sessionId < 0 {
+			sessionId = -sessionId
+			reply = errSessionExpired
+		}
 		ch, ok := a.pending[sessionId]
 		if ok {
 			select {
-			case ch <- nil:
+			case ch <- reply:
 			default:
 			}
 			delete(a.pending, sessionId)
@@ -110,7 +116,7 @@ func (a *pingForwarder) Ping(sessionId proto.SessionId) error {
 	if err == leadernet.ErrLocal {
 		log.Printf("Handling ping for %v locally", sessionId)
 		if !a.stateMachine.Ping(sessionId) {
-			return errors.New("session not found")
+			return errSessionExpired
 		}
 		return nil
 	}

@@ -143,11 +143,14 @@ func (s *Server) processPing(rpc *RPC) {
 	err := s.pingForwarder.Ping(rpc.conn.SessionId())
 	if err == nil {
 		rpc.reply(0, []byte{})
-	} else {
-		log.Printf("Ping forwarder error: %v", err)
-		rpc.conn.Close()
 		return
 	}
+	log.Printf("Ping forwarder error: %v", err)
+	if err == errSessionExpired {
+		rpc.errReply(0, proto.ErrSessionExpired)
+		return
+	}
+	rpc.conn.Close()
 }
 
 func (s *Server) processQuery(rpc *RPC) {

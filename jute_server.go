@@ -343,6 +343,9 @@ func (conn *JuteConnection) process(msg []byte) error {
 			return
 		}
 		conn.sendQueue.Push(buf)
+		if errCode == proto.ErrSessionExpired {
+			conn.sendQueue.Push(nil)
+		}
 	}
 
 	rpc.reply = func(zxid proto.ZXID, msgBuf []byte) {
