@@ -251,7 +251,7 @@ func (s *Server) startRaft(streamLayer raft.StreamLayer) error {
 		}
 
 		err = raft.BootstrapCluster(s.raft.settings,
-			s.raft.logStore, s.raft.stableStore, s.raft.snapStore,
+			s.raft.logStore, s.raft.stableStore, s.raft.snapStore, s.raft.transport,
 			configuration)
 		if err != nil {
 			return fmt.Errorf("Unable to bootstrap Raft server: %v\n", err)
@@ -291,12 +291,14 @@ func (s *Server) serve() error {
 		}
 	})
 	adminMux.HandleFunc("/raft/membership", func(w http.ResponseWriter, req *http.Request) {
-		configuration, index, err := s.raft.handle.GetConfiguration()
+		future := s.raft.handle.GetConfiguration()
+		err := future.Error()
 		if err != nil {
 			fmt.Fprintf(w, "error: %v", err)
 			return
 		}
-		fmt.Fprintf(w, "index: %v, configuration: %+v", index, configuration)
+		fmt.Fprintf(w, "index: %v, configuration: %+v",
+			future.Index(), future.Configuration())
 	})
 	adminMux.HandleFunc("/api/raft/addvoter", func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == "POST" {
