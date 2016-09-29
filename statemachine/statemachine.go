@@ -21,13 +21,15 @@ import (
 )
 
 type StateMachine struct {
-	mutex         sync.Mutex
-	lastApplied   proto.ZXID
-	tree          *Tree
-	sessions      map[proto.SessionId]*Session
-	watches       map[TreeEvent]Connections
-	output        map[fullCommandId]CommandResultFn
-	connectOutput map[string]ConnectResultFn
+	serverId          uint64
+	mutex             sync.Mutex
+	lastApplied       proto.ZXID
+	tree              *Tree
+	sessions          map[proto.SessionId]*Session
+	watches           map[TreeEvent]Connections
+	output            map[fullCommandId]CommandResultFn
+	connectOutput     map[string]ConnectResultFn
+	minSessionTimeout time.Duration
 }
 
 type fullCommandId struct {
@@ -48,8 +50,10 @@ type Connections []Connection
 
 type context struct {
 	zxid      proto.ZXID
+	term      uint64
 	time      int64
 	rand      []byte
+	server    uint64
 	sessionId proto.SessionId
 	connId    ConnectionId
 	cmdId     CommandId
@@ -67,6 +71,7 @@ const (
 // This is preceded by a 1-byte version number set to 1.
 type CommandHeader1 struct {
 	CmdType   CommandType
+	Server    uint64
 	SessionId proto.SessionId
 	ConnId    ConnectionId
 	CmdId     CommandId
@@ -75,7 +80,12 @@ type CommandHeader1 struct {
 }
 
 type ExpireRequest struct {
-	Sessions []proto.SessionId
+	Term     uint64
+	Sessions []ExpireEntry
+}
+type ExpireEntry struct {
+	Session  proto.SessionId
+	LastConn ConnectionId
 }
 
 type TreeEvent struct {
@@ -96,54 +106,75 @@ type QueryResultFn func(zxid proto.ZXID, output []byte, errCode proto.ErrCode)
 type Session struct {
 	password  proto.SessionPassword
 	connId    ConnectionId
+	connOwner uint64
 	lastCmdId CommandId
 	queries   []*asyncQuery // these are waiting for lastCmdId to advance
 	timeout   time.Duration
-	lease     time.Duration
+	// Expire session with owner == self after a session timeout
+	// since contact with client.
+	// If leader, expire session with owner != self after owner
+	// has not made contact for two session timeouts.
+	lastContact time.Time
 }
 
-func NewStateMachine() *StateMachine {
+func NewStateMachine(serverId uint64, minSessionTimeout time.Duration) *StateMachine {
 	return &StateMachine{
-		lastApplied:   0,
-		tree:          NewTree(),
-		sessions:      make(map[proto.SessionId]*Session),
-		watches:       make(map[TreeEvent]Connections),
-		output:        make(map[fullCommandId]CommandResultFn),
-		connectOutput: make(map[string]ConnectResultFn),
+		serverId:          serverId,
+		lastApplied:       0,
+		tree:              NewTree(),
+		sessions:          make(map[proto.SessionId]*Session),
+		watches:           make(map[TreeEvent]Connections),
+		output:            make(map[fullCommandId]CommandResultFn),
+		connectOutput:     make(map[string]ConnectResultFn),
+		minSessionTimeout: minSessionTimeout,
 	}
 }
 
-func (sm *StateMachine) Ping(sessionId proto.SessionId) bool {
+var ErrSessionExpired = proto.ErrSessionExpired.Error()
+var ErrDisconnect = errors.New("No contact with leader in a while")
+
+func (sm *StateMachine) Ping(sessionId proto.SessionId,
+	lastLeaderContact time.Duration) error {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
 	session, ok := sm.sessions[sessionId]
-	if ok {
-		session.lease = session.timeout
-		return true
+	if !ok {
+		return ErrSessionExpired
 	}
-	return false
+	session.lastContact = time.Now()
+	if lastLeaderContact > session.timeout*time.Duration(2)/time.Duration(3) {
+		return ErrDisconnect
+	}
+	return nil
 }
 
-func (sm *StateMachine) ResetLeases() {
+func (sm *StateMachine) Elapsed(
+	now time.Time,
+	term uint64,
+	lastLeaderContact time.Time,
+	leader bool,
+	stableSince time.Time,
+	serverContact func(uint64) time.Time) *ExpireRequest {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
-	log.Printf("Resetting leases")
-	for _, session := range sm.sessions {
-		session.lease = session.timeout
-	}
-}
-
-func (sm *StateMachine) Elapsed(duration time.Duration) *ExpireRequest {
-	sm.mutex.Lock()
-	defer sm.mutex.Unlock()
-	expire := &ExpireRequest{}
+	expire := &ExpireRequest{Term: term}
 	for sessionId, session := range sm.sessions {
-		if session.lease > duration {
-			session.lease -= duration
-		} else {
-			session.lease = 0
-			log.Printf("Session %v is out of time", sessionId)
-			expire.Sessions = append(expire.Sessions, sessionId)
+		hasExpired := false
+		if now.Sub(session.lastContact) > session.timeout {
+			if session.connOwner == sm.serverId {
+				hasExpired = true
+			} else if leader {
+				lastContact := serverContact(session.connOwner)
+				if lastContact.After(stableSince) &&
+					now.Sub(lastContact) > session.timeout*time.Duration(2) {
+					hasExpired = true
+				}
+			}
+			if hasExpired {
+				log.Printf("Session %v is out of time", sessionId)
+				expire.Sessions = append(expire.Sessions,
+					ExpireEntry{Session: sessionId, LastConn: session.connId})
+			}
 		}
 	}
 	if len(expire.Sessions) > 0 {
@@ -224,9 +255,13 @@ func (sm *StateMachine) applyConnect(ctx *context, cmdBuf []byte, resultFn Conne
 		}
 		session.connId++
 	}
+	session.connOwner = ctx.server
 	session.lastCmdId = ctx.cmdId
 	session.timeout = time.Millisecond * time.Duration(req.Timeout)
-	session.lease = session.timeout
+	if session.timeout < sm.minSessionTimeout {
+		session.timeout = sm.minSessionTimeout
+	}
+	session.lastContact = time.Now()
 	resp := &proto.ConnectResponse{
 		ProtocolVersion: 0,
 		Timeout:         int32(session.timeout / time.Millisecond),
@@ -243,9 +278,20 @@ func (sm *StateMachine) applyExpire(ctx *context, cmdBuf []byte) {
 		log.Printf("Error decoding expire list: %v", err)
 		return
 	}
-	for _, sessionId := range req.Sessions {
-		delete(sm.sessions, sessionId)
-		tree, notify := sm.tree.ExpireSession(ctx.zxid, sessionId)
+	if req.Term != ctx.term {
+		log.Printf("Ignoring expire list with stale term")
+		return
+	}
+	for _, expire := range req.Sessions {
+		session, ok := sm.sessions[expire.Session]
+		if !ok {
+			continue
+		}
+		if session.connId != expire.LastConn {
+			continue
+		}
+		delete(sm.sessions, expire.Session)
+		tree, notify := sm.tree.ExpireSession(ctx.zxid, expire.Session)
 		sm.tree = tree
 		sm.notifyWatches(ctx.zxid, notify)
 	}
@@ -342,11 +388,13 @@ func (sm *StateMachine) Apply(entry *raft.Log) (unused interface{}) {
 	header := CommandHeader1{}
 	cmdBuf, err := jute.DecodeSome(entry.Data[1:], &header)
 	if err != nil {
-		log.Fatalf("Error decoding log entry command header. Crashing.")
+		log.Fatalf("Error decoding log entry command header (%v). Crashing.", err)
 	}
 
 	ctx := &context{
 		zxid:      proto.ZXID(entry.Index),
+		term:      entry.Term,
+		server:    header.Server,
 		time:      header.Time,
 		rand:      header.Rand,
 		sessionId: header.SessionId,
@@ -473,6 +521,10 @@ func (sm *StateMachine) Query(
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
 	sm.queueQuery(query)
+	session, ok := sm.sessions[query.conn.SessionId()]
+	if ok {
+		session.lastContact = time.Now()
+	}
 }
 
 func (sm *StateMachine) queueQuery(query *asyncQuery) {

@@ -112,6 +112,9 @@ func encodePacketValue(buf []byte, v reflect.Value) (int, error) {
 	case reflect.Int64:
 		binary.BigEndian.PutUint64(buf[n:n+8], uint64(v.Int()))
 		n += 8
+	case reflect.Uint64:
+		binary.BigEndian.PutUint64(buf[n:n+8], v.Uint())
+		n += 8
 	case reflect.String:
 		str := v.String()
 		binary.BigEndian.PutUint32(buf[n:n+4], uint32(len(str)))
@@ -202,6 +205,9 @@ func decodePacketValue(buf []byte, v reflect.Value) (int, error) {
 		n += 4
 	case reflect.Int64:
 		v.SetInt(int64(binary.BigEndian.Uint64(buf[n : n+8])))
+		n += 8
+	case reflect.Uint64:
+		v.SetUint(binary.BigEndian.Uint64(buf[n : n+8]))
 		n += 8
 	case reflect.String:
 		ln := int(binary.BigEndian.Uint32(buf[n : n+4]))

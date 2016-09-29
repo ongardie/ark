@@ -26,12 +26,13 @@ import (
 
 type Server struct {
 	options struct {
-		bootstrap     bool
-		serverId      uint64
-		storeDir      string
-		peerAddress   string
-		clientAddress string
-		adminAddress  string
+		bootstrap         bool
+		serverId          uint64
+		storeDir          string
+		peerAddress       string
+		clientAddress     string
+		adminAddress      string
+		heartbeatInterval time.Duration
 	}
 	stateMachine *statemachine.StateMachine
 	raft         struct {
@@ -42,9 +43,11 @@ type Server struct {
 		transport   raft.Transport
 		handle      *raft.Raft
 	}
-	logAppender   *logAppender
-	pingForwarder *pingForwarder
+	logAppender     *logAppender
+	failureDetector *failureDetector
 }
+
+const HEARTBEAT_INTERVAL = 250 * time.Millisecond
 
 func getRand(n int) []byte {
 	rand := make([]byte, n)
@@ -59,6 +62,7 @@ func getRand(n int) []byte {
 func (s *Server) processConnect(rpc *ConnectRPC) {
 	header := statemachine.CommandHeader1{
 		CmdType:   statemachine.ConnectCommand,
+		Server:    s.options.serverId,
 		SessionId: 0,
 		ConnId:    0,
 		CmdId:     1,
@@ -100,6 +104,7 @@ func (s *Server) processCommand(rpc *RPC) {
 	log.Printf("Processing %v command", rpc.opName)
 	header := statemachine.CommandHeader1{
 		CmdType:   statemachine.NormalCommand,
+		Server:    s.options.serverId,
 		SessionId: rpc.conn.SessionId(),
 		ConnId:    rpc.conn.ConnId(),
 		CmdId:     rpc.cmdId,
@@ -146,17 +151,30 @@ func (s *Server) processCommand(rpc *RPC) {
 
 func (s *Server) processPing(rpc *RPC) {
 	log.Printf("Processing ping")
-	err := s.pingForwarder.Ping(rpc.conn.SessionId())
-	if err == nil {
+
+	var lastLeaderContact time.Duration
+	if isLeader(s.raft.handle) {
+		// TODO: should expose lastContact from raft.go:checkLeaderLease().
+		lastLeaderContact = s.raft.settings.LeaderLeaseTimeout
+	} else {
+		lastLeaderContact = time.Now().Sub(s.failureDetector.LastLeaderContact())
+	}
+	err := s.stateMachine.Ping(rpc.conn.SessionId(), lastLeaderContact)
+	switch err {
+	case nil:
+		log.Printf("Pong")
 		rpc.reply(0, []byte{})
-		return
-	}
-	log.Printf("Ping forwarder error: %v", err)
-	if err == errSessionExpired {
+	case statemachine.ErrSessionExpired:
+		log.Printf("Session expired")
 		rpc.errReply(0, proto.ErrSessionExpired)
-		return
+	case statemachine.ErrDisconnect:
+		log.Printf("Last leader contact too old. Disconnecting")
+		rpc.conn.Close()
+	default:
+		log.Printf("Unknown ping error: %v. Disconnecting", err)
+		rpc.conn.Close()
+
 	}
-	rpc.conn.Close()
 }
 
 func (s *Server) processQuery(rpc *RPC) {
@@ -212,7 +230,7 @@ func (s *Server) handler(rpc RPCish) {
 const (
 	RAFT_PROTO        byte = 10
 	COMMAND_FORWARDER byte = 11
-	PING_FORWARDER    byte = 12
+	FAILURE_DETECTOR  byte = 12
 )
 
 func (s *Server) startRaft(streamLayer raft.StreamLayer) error {
@@ -356,50 +374,65 @@ func getTerm(r *raft.Raft) uint64 {
 }
 
 func (s *Server) expireSessions() {
-	const tick = 10 * time.Millisecond
+	const tick = 50 * time.Millisecond
 	raft := s.raft.handle
 
-	for {
-		// Wait for leadership to start timing
-		for !isLeader(raft) {
-			time.Sleep(100 * time.Millisecond)
-		}
-		termStart := getTerm(raft)
-		s.stateMachine.ResetLeases()
+	lastLeader := isLeader(raft)
+	lastTerm := getTerm(raft)
+	start := time.Now()
 
-		for {
-			time.Sleep(tick)
-			if !isLeader(raft) || getTerm(raft) != termStart {
-				break
-			}
-			// A tick elapsed while still leader
-			expire := s.stateMachine.Elapsed(tick)
-			if expire != nil {
-				header := statemachine.CommandHeader1{
-					CmdType:   statemachine.ExpireCommand,
-					SessionId: 0,
-					ConnId:    0,
-					CmdId:     0,
-					Time:      time.Now().Unix(),
-					Rand:      getRand(proto.SessionPasswordLen),
-				}
-				headerBuf, err := jute.Encode(&header)
-				if err != nil {
-					log.Printf("Failed to encode expire log entry header: %v", err)
-					break
-				}
-				cmdBuf, err := jute.Encode(expire)
-				if err != nil {
-					log.Printf("Failed to encode expire list: %v", err)
-					break
-				}
-				buf := append(append([]byte{1}, headerBuf...), cmdBuf...)
-				err = raft.Apply(buf, 0).Error()
-				if err != nil {
-					log.Printf("Failed to commit expire command: %v", err)
-					break
-				}
-			}
+	for {
+		time.Sleep(tick)
+		leader := isLeader(raft)
+		term := getTerm(raft)
+		if leader != lastLeader || term != lastTerm {
+			lastLeader = leader
+			lastTerm = term
+			start = time.Now()
+			continue
+		}
+		now := time.Now()
+		var lastLeaderContact time.Time
+		if leader {
+			lastLeaderContact = now
+		} else {
+			lastLeaderContact = s.failureDetector.LastLeaderContact()
+		}
+		// A tick elapsed while leader and term were steady.
+		expire := s.stateMachine.Elapsed(now, term,
+			lastLeaderContact,
+			leader, start, s.failureDetector.LastContact)
+		if expire == nil {
+			continue
+		}
+		log.Printf("expire: %+v", expire)
+
+		header := statemachine.CommandHeader1{
+			CmdType:   statemachine.ExpireCommand,
+			Server:    s.options.serverId,
+			SessionId: 0,
+			ConnId:    0,
+			CmdId:     0,
+			Time:      time.Now().Unix(),
+			Rand:      getRand(proto.SessionPasswordLen),
+		}
+		headerBuf, err := jute.Encode(&header)
+		if err != nil {
+			log.Fatalf("Failed to encode expire log entry header: %v", err)
+		}
+		cmdBuf, err := jute.Encode(expire)
+		if err != nil {
+			log.Fatalf("Failed to encode expire list: %v", err)
+		}
+		buf := append(append([]byte{1}, headerBuf...), cmdBuf...)
+
+		doneCh := make(chan struct{})
+		close(doneCh)
+		errCh := s.logAppender.Append(buf, doneCh)
+		select {
+		case err := <-errCh:
+			log.Printf("Failed to commit expire command: %v", err)
+		default:
 		}
 	}
 }
@@ -436,7 +469,7 @@ func main() {
 	s.options.storeDir = fmt.Sprintf("%s/server%v",
 		s.options.storeDir, s.options.serverId)
 
-	s.stateMachine = statemachine.NewStateMachine()
+	s.stateMachine = statemachine.NewStateMachine(s.options.serverId, HEARTBEAT_INTERVAL*3)
 
 	addr, err := net.ResolveTCPAddr("tcp", s.options.peerAddress)
 	if err != nil {
@@ -449,7 +482,7 @@ func main() {
 		os.Exit(1)
 	}
 	streamLayers := NewDemuxStreamLayer(stream,
-		RAFT_PROTO, COMMAND_FORWARDER, PING_FORWARDER)
+		RAFT_PROTO, COMMAND_FORWARDER, FAILURE_DETECTOR)
 
 	err = s.startRaft(streamLayers[RAFT_PROTO])
 	if err != nil {
@@ -458,7 +491,8 @@ func main() {
 	}
 
 	s.logAppender = newLogAppender(s.raft.handle, streamLayers[COMMAND_FORWARDER])
-	s.pingForwarder = newPingForwarder(s.stateMachine, s.raft.handle, streamLayers[PING_FORWARDER])
+	s.failureDetector = newFailureDetector(s.stateMachine, s.raft.handle, streamLayers[FAILURE_DETECTOR],
+		s.options.serverId, HEARTBEAT_INTERVAL)
 
 	go s.expireSessions()
 

@@ -66,6 +66,7 @@ func (ln *LeaderNet) Dial(timeout time.Duration) (Conn, Cached, error) {
 		return nil, Cached(false), err
 	}
 	ln.conn = &leaderConn{
+		ln:      ln,
 		addr:    addr,
 		netConn: conn,
 		closed:  zoosync.NewBroadcast(),
