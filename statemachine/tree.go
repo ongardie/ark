@@ -291,6 +291,17 @@ func (t *Tree) GetChildren2(ctx *context, req *proto.GetChildren2Request) (*prot
 	return resp, register, proto.ErrOk
 }
 
+func (t *Tree) CheckVersion(ctx *context, req *proto.CheckVersionRequest) (*proto.CheckVersionResponse, proto.ErrCode) {
+	target := t.lookup(req.Path)
+	if target == nil {
+		return nil, proto.ErrNoNode
+	}
+	if target.stat.Version != req.Version {
+		return nil, proto.ErrBadVersion
+	}
+	return &proto.CheckVersionResponse{}, proto.ErrOk
+}
+
 func (t *Tree) GetData(ctx *context, req *proto.GetDataRequest) (*proto.GetDataResponse, RegisterEvents, proto.ErrCode) {
 	var register RegisterEvents
 	target := t.lookup(req.Path)

@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 	"sync"
 
 	"salesforce.com/zoolater/intframe"
@@ -72,6 +73,48 @@ func decodeRequest(count uint64, msg []byte, withHeader func(proto.RequestHeader
 	}
 	withHeader(reqHeader)
 
+	if reqHeader.OpCode == proto.OpMulti {
+		var ops []string
+		for {
+			opHeader := &proto.MultiHeader{}
+			more, err = jute.DecodeSome(more, opHeader)
+			if err != nil {
+				return fmt.Sprintf("%+v multi request with op header decode error: %v",
+					reqHeader, err)
+			}
+			if opHeader.Done {
+				if opHeader.Type != -1 || opHeader.Err != -1 {
+					return fmt.Sprintf("%+v multi request with bad op header: %v",
+						reqHeader, opHeader)
+				}
+				if len(more) > 0 {
+					return fmt.Sprintf("%+v multi request with %v extra bytes",
+						reqHeader, len(more))
+				}
+				break
+			}
+			switch opHeader.Type {
+			case proto.OpCreate:
+			case proto.OpSetData:
+			case proto.OpDelete:
+			case proto.OpCheck:
+			default:
+				return fmt.Sprintf("%+v multi request with unknown type: %v",
+					reqHeader, opHeader)
+			}
+			op := proto.RequestStructForOp(opHeader.Type)
+			more, err = jute.DecodeSome(more, op)
+			if err != nil {
+				return fmt.Sprintf("%+v multi request with op decode error: %v",
+					reqHeader, err)
+			}
+			ops = append(ops, fmt.Sprintf("%+v %v %+v",
+				opHeader, opName(opHeader.Type), op))
+		}
+		return fmt.Sprintf("%+v multi request %v",
+			reqHeader, strings.Join(ops, ", "))
+	}
+
 	req := proto.RequestStructForOp(reqHeader.OpCode)
 	if req == nil {
 		return fmt.Sprintf("%+v %v (unknown struct)",
@@ -114,6 +157,7 @@ func decodeReply(count uint64, msg []byte, getOpCode func(xid int32) (proto.OpCo
 		return fmt.Sprintf("error reading response header: %v", err)
 	}
 
+	multi := false
 	var resp interface{}
 	var name string
 	switch respHeader.Xid {
@@ -129,15 +173,84 @@ func decodeReply(count uint64, msg []byte, getOpCode func(xid int32) (proto.OpCo
 			return fmt.Sprintf("%+v %v", respHeader, more)
 		}
 		name = fmt.Sprintf("%s response", opName(opCode))
-		resp = proto.ResponseStructForOp(opCode)
-		if resp == nil {
-			return fmt.Sprintf("%+v %v (unknown struct)",
-				respHeader, name)
+		if opCode == proto.OpMulti {
+			multi = true
+		} else {
+			resp = proto.ResponseStructForOp(opCode)
+			if resp == nil {
+				return fmt.Sprintf("%+v %v (unknown struct)",
+					respHeader, name)
+			}
 		}
 	}
 
 	if respHeader.Err != proto.ErrOk {
 		return fmt.Sprintf("%+v %v %v", respHeader, name, respHeader.Err.Error())
+	}
+
+	if multi {
+		var ops []string
+		for {
+			opHeader := &proto.MultiHeader{}
+			more, err = jute.DecodeSome(more, opHeader)
+			if err != nil {
+				return fmt.Sprintf("%+v multi with op header decode error: %v",
+					respHeader, err)
+			}
+
+			if opHeader.Done {
+				if opHeader.Type != -1 || opHeader.Err != -1 {
+					return fmt.Sprintf("%+v multi response with bad op header: %v",
+						respHeader, opHeader)
+				}
+				if len(more) > 0 {
+					return fmt.Sprintf("%+v multi response with %v extra bytes",
+						respHeader, len(more))
+				}
+				break
+			}
+
+			switch opHeader.Type {
+			case proto.OpError:
+				result := new(proto.MultiErrorResponse)
+				more, err = jute.DecodeSome(more, result)
+				if err != nil {
+					return fmt.Sprintf("%+v multi response with errcode decode error: %v",
+						respHeader, err)
+				}
+				if result.Err != opHeader.Err {
+					return fmt.Sprintf("%+v multi response with mismatched error code: %+v but then %v",
+						respHeader, opHeader, result)
+				}
+				ops = append(ops, fmt.Sprintf("%+v error %v (%v)", opHeader, result.Err, result.Err.Error()))
+			case proto.OpCreate:
+				result := new(proto.CreateResponse)
+				more, err = jute.DecodeSome(more, result)
+				if err != nil {
+					return fmt.Sprintf("%+v multi response with create decode error: %v",
+						respHeader, err)
+				}
+				ops = append(ops, fmt.Sprintf("%+v create %+v", opHeader, result))
+			case proto.OpSetData:
+				result := new(proto.SetDataResponse)
+				more, err = jute.DecodeSome(more, result)
+				if err != nil {
+					return fmt.Sprintf("%+v multi response with setData decode error: %v",
+						respHeader, err)
+				}
+				ops = append(ops, fmt.Sprintf("%+v setData %+v", opHeader, result))
+			case proto.OpCheck:
+				// proto.CheckResponse is empty, don't bother decoding
+				ops = append(ops, fmt.Sprintf("%+v check ok", opHeader))
+			case proto.OpDelete:
+				// proto.DeleteResponse is empty, don't bother decoding
+				ops = append(ops, fmt.Sprintf("%+v delete ok", opHeader))
+			default:
+				return fmt.Sprintf("%+v multi response with unexpected op %v",
+					respHeader, opHeader)
+			}
+		}
+		return fmt.Sprintf("%+v multi %v", respHeader, strings.Join(ops, ", "))
 	}
 
 	err = jute.Decode(more, resp)
@@ -189,6 +302,7 @@ func (conn *proxyConn) replyLoop() {
 			conn.client.Close()
 			return
 		}
+		log.Printf("[conn %v] got %v bytes", conn.id, len(msg))
 		str := decodeReply(conn.replies, msg, func(xid int32) (proto.OpCode, bool) {
 			conn.opsMutex.Lock()
 			opCode, ok := conn.ops[xid]
