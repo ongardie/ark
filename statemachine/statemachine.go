@@ -350,6 +350,14 @@ func (sm *StateMachine) applyCommand(ctx *context, cmdBuf []byte) ([]byte, proto
 		if req := new(proto.SetDataRequest); decode(req) {
 			tree, resp, notify, errCode = sm.tree.SetData(ctx, req)
 		}
+
+	case proto.OpSync:
+		if req := new(proto.SyncRequest); decode(req) {
+			tree = sm.tree
+			resp = &proto.SyncResponse{Path: req.Path}
+			notify = nil
+			errCode = proto.ErrOk
+		}
 	}
 
 	if errCode != proto.ErrOk {
