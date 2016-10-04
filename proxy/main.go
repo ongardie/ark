@@ -302,7 +302,7 @@ func (conn *proxyConn) replyLoop() {
 			conn.client.Close()
 			return
 		}
-		log.Printf("[conn %v] got %v bytes", conn.id, len(msg))
+		//log.Printf("[conn %v] got %v bytes", conn.id, len(msg))
 		str := decodeReply(conn.replies, msg, func(xid int32) (proto.OpCode, bool) {
 			conn.opsMutex.Lock()
 			opCode, ok := conn.ops[xid]
