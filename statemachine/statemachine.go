@@ -679,11 +679,17 @@ func (sm *StateMachine) Apply(entry *raft.Log) (unused interface{}) {
 }
 
 func (sm *StateMachine) ExpectCommand(
-	session proto.SessionId, connection ConnectionId, cmd CommandId,
+	sessionId proto.SessionId, connId ConnectionId, cmdId CommandId,
 	fn CommandResultFn) {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
-	sm.output[fullCommandId{session, connection, cmd}] = fn
+	sm.output[fullCommandId{sessionId, connId, cmdId}] = fn
+
+	// commands act as signs of life too
+	session, ok := sm.sessions[sessionId]
+	if ok {
+		session.lastContact = time.Now()
+	}
 }
 
 func (sm *StateMachine) ExpectConnect(rand []byte, fn ConnectResultFn) {
