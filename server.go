@@ -132,6 +132,9 @@ func (s *Server) processCommand(rpc *RPC) {
 				} else {
 					rpc.reply(index, output)
 				}
+			} else if errCode == proto.ErrInvalidState {
+				log.Printf("Could not apply %v command: arrived out of order", rpc.opName)
+				rpc.conn.Close()
 			} else {
 				rpc.errReply(index, errCode)
 			}
