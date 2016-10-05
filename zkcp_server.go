@@ -45,12 +45,33 @@ func (q *InfiniteQueue) Pop() ([]byte, bool) {
 	return nil, false
 }
 
-type JuteServer struct {
-	handler func(RPCish)
+type ConnectRPC struct {
+	conn     statemachine.Connection
+	reqJute  []byte
+	req      *proto.ConnectRequest
+	errReply func(proto.ErrCode)
+	reply    func(*proto.ConnectResponse, statemachine.ConnectionId)
 }
 
-type JuteConnection struct {
-	server    *JuteServer
+type RPC struct {
+	conn           statemachine.Connection
+	cmdId          statemachine.CommandId
+	lastCmdId      statemachine.CommandId
+	reqHeaderJute  []byte
+	reqHeader      proto.RequestHeader
+	opName         string
+	req            []byte
+	errReply       func(proto.ZXID, proto.ErrCode)
+	reply          func(proto.ZXID, []byte)
+	replyThenClose func(proto.ZXID, []byte)
+}
+
+type ZKCPServer struct {
+	handler func(interface{})
+}
+
+type ZKCPConnection struct {
+	server    *ZKCPServer
 	netConn   net.Conn
 	sendQueue *InfiniteQueue
 	closeCh   chan struct{}
@@ -59,20 +80,20 @@ type JuteConnection struct {
 	lastCmdId statemachine.CommandId
 }
 
-func (conn *JuteConnection) String() string {
-	return fmt.Sprintf("Jute connection %v on session %v",
+func (conn *ZKCPConnection) String() string {
+	return fmt.Sprintf("ZKCP connection %v on session %v",
 		conn.connId, conn.sessionId)
 }
 
-func (conn *JuteConnection) SessionId() proto.SessionId {
+func (conn *ZKCPConnection) SessionId() proto.SessionId {
 	return conn.sessionId
 }
 
-func (conn *JuteConnection) ConnId() statemachine.ConnectionId {
+func (conn *ZKCPConnection) ConnId() statemachine.ConnectionId {
 	return conn.connId
 }
 
-func (conn *JuteConnection) Notify(zxid proto.ZXID, event statemachine.TreeEvent) {
+func (conn *ZKCPConnection) Notify(zxid proto.ZXID, event statemachine.TreeEvent) {
 	respHeader := proto.ResponseHeader{
 		Xid:  proto.XidWatcherEvent,
 		Zxid: zxid,
@@ -97,7 +118,7 @@ func (conn *JuteConnection) Notify(zxid proto.ZXID, event statemachine.TreeEvent
 	conn.sendQueue.Push(append(headerBuf, msgBuf...))
 }
 
-func (conn *JuteConnection) handshake() {
+func (conn *ZKCPConnection) handshake() {
 	// Receive connection request from the client
 	req, err := intframe.Receive(conn.netConn)
 	if err != nil {
@@ -134,7 +155,7 @@ func (conn *JuteConnection) handshake() {
 	go conn.receiveLoop()
 }
 
-func (conn *JuteConnection) Encode(msg interface{}) ([]byte, error) {
+func (conn *ZKCPConnection) Encode(msg interface{}) ([]byte, error) {
 	buf, err := jute.Encode(msg)
 	if err != nil {
 		conn.Close()
@@ -142,7 +163,7 @@ func (conn *JuteConnection) Encode(msg interface{}) ([]byte, error) {
 	return buf, err
 }
 
-func (conn *JuteConnection) DecodeSome(buf []byte, msg interface{}) ([]byte, error) {
+func (conn *ZKCPConnection) DecodeSome(buf []byte, msg interface{}) ([]byte, error) {
 	more, err := jute.DecodeSome(buf, msg)
 	if err != nil {
 		conn.Close()
@@ -150,7 +171,7 @@ func (conn *JuteConnection) DecodeSome(buf []byte, msg interface{}) ([]byte, err
 	return more, err
 }
 
-func (conn *JuteConnection) Decode(buf []byte, msg interface{}) error {
+func (conn *ZKCPConnection) Decode(buf []byte, msg interface{}) error {
 	err := jute.Decode(buf, msg)
 	if err != nil {
 		conn.Close()
@@ -160,7 +181,7 @@ func (conn *JuteConnection) Decode(buf []byte, msg interface{}) error {
 
 // It's safe to call close() more than once. To make this work, we can't simply
 // close(closeCh).
-func (conn *JuteConnection) Close() {
+func (conn *ZKCPConnection) Close() {
 	select {
 	case conn.closeCh <- struct{}{}:
 	default:
@@ -171,7 +192,7 @@ func (conn *JuteConnection) Close() {
 	}
 }
 
-func (conn *JuteConnection) receiveLoop() {
+func (conn *ZKCPConnection) receiveLoop() {
 	for {
 		req, err := intframe.Receive(conn.netConn)
 		if err != nil {
@@ -188,7 +209,7 @@ func (conn *JuteConnection) receiveLoop() {
 	}
 }
 
-func (conn *JuteConnection) toSend() []byte {
+func (conn *ZKCPConnection) toSend() []byte {
 	for {
 		msg, ok := conn.sendQueue.Pop()
 		if ok {
@@ -207,7 +228,7 @@ func (conn *JuteConnection) toSend() []byte {
 	}
 }
 
-func (conn *JuteConnection) sendLoop() {
+func (conn *ZKCPConnection) sendLoop() {
 	for {
 		msg := conn.toSend()
 		if msg == nil {
@@ -222,7 +243,7 @@ func (conn *JuteConnection) sendLoop() {
 	}
 }
 
-func (s *JuteServer) Listen(addr string) error {
+func (s *ZKCPServer) Listen(addr string) error {
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("Error listening on %v: %v", addr, err)
@@ -231,7 +252,7 @@ func (s *JuteServer) Listen(addr string) error {
 	return nil
 }
 
-func (s *JuteServer) acceptLoop(listener net.Listener) {
+func (s *ZKCPServer) acceptLoop(listener net.Listener) {
 	for {
 		conn, err := listener.Accept()
 		if err == nil {
@@ -242,8 +263,8 @@ func (s *JuteServer) acceptLoop(listener net.Listener) {
 	}
 }
 
-func (s *JuteServer) newConnection(netConn net.Conn) {
-	conn := &JuteConnection{
+func (s *ZKCPServer) newConnection(netConn net.Conn) {
+	conn := &ZKCPConnection{
 		server:    s,
 		netConn:   netConn,
 		sendQueue: NewInfiniteQueue(),
@@ -252,7 +273,7 @@ func (s *JuteServer) newConnection(netConn net.Conn) {
 	go conn.handshake()
 }
 
-func (conn *JuteConnection) processConnReq(reqBuf []byte) error {
+func (conn *ZKCPConnection) processConnReq(reqBuf []byte) error {
 	req := &proto.ConnectRequest{}
 	more, err := jute.DecodeSome(reqBuf, req)
 	if err != nil {
@@ -303,7 +324,7 @@ func (conn *JuteConnection) processConnReq(reqBuf []byte) error {
 	return nil
 }
 
-func (conn *JuteConnection) process(msg []byte) error {
+func (conn *ZKCPConnection) process(msg []byte) error {
 	rpc := &RPC{
 		conn: conn,
 	}

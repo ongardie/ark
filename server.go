@@ -7,7 +7,6 @@ package main
 
 import (
 	cryptoRand "crypto/rand"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -45,6 +44,7 @@ type Server struct {
 	}
 	logAppender     *logAppender
 	failureDetector *failureDetector
+	adminServer     *http.Server
 }
 
 const HEARTBEAT_INTERVAL = 250 * time.Millisecond
@@ -214,7 +214,7 @@ func isReadOnly(opCode proto.OpCode) bool {
 	}
 }
 
-func (s *Server) handler(rpc RPCish) {
+func (s *Server) zkcpHandler(rpc interface{}) {
 	switch rpc := rpc.(type) {
 	case *ConnectRPC:
 		s.processConnect(rpc)
@@ -226,13 +226,15 @@ func (s *Server) handler(rpc RPCish) {
 		} else {
 			s.processCommand(rpc)
 		}
+	default:
+		log.Fatalf("ZKCPServer handler called with unknown type %T", rpc)
 	}
 }
 
 const (
-	RAFT_PROTO        byte = 10
-	COMMAND_FORWARDER byte = 11
-	FAILURE_DETECTOR  byte = 12
+	RAFT_PROTO        Subport = 10
+	COMMAND_FORWARDER Subport = 11
+	FAILURE_DETECTOR  Subport = 12
 )
 
 func (s *Server) startRaft(streamLayer raft.StreamLayer) error {
@@ -296,65 +298,11 @@ type addVoterRequest struct {
 }
 
 func (s *Server) serve() error {
-	log.Printf("listening for admin requests on %v", s.options.adminAddress)
-	adminMux := http.NewServeMux()
-	adminMux.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
-		if req.URL.Path != "/" {
-			http.NotFound(w, req)
-			return
-		}
-		fmt.Fprintf(w, "admin http server")
-	})
-	adminMux.HandleFunc("/raft/stats", func(w http.ResponseWriter, req *http.Request) {
-		for k, v := range s.raft.handle.Stats() {
-			fmt.Fprintf(w, "%v: %v\n", k, v)
-		}
-	})
-	adminMux.HandleFunc("/raft/membership", func(w http.ResponseWriter, req *http.Request) {
-		future := s.raft.handle.GetConfiguration()
-		err := future.Error()
-		if err != nil {
-			fmt.Fprintf(w, "error: %v", err)
-			return
-		}
-		fmt.Fprintf(w, "index: %v, configuration: %+v",
-			future.Index(), future.Configuration())
-	})
-	adminMux.HandleFunc("/api/raft/addvoter", func(w http.ResponseWriter, req *http.Request) {
-		if req.Method == "POST" {
-			decoder := json.NewDecoder(req.Body)
-			args := addVoterRequest{}
-			err := decoder.Decode(&args)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("Error decoding JSON: %v", err), http.StatusBadRequest)
-				return
-			}
-			log.Printf("AddVoter %+v\n", args)
-			future := s.raft.handle.AddVoter(
-				args.ServerId,
-				args.Address,
-				args.PrevIndex,
-				time.Second*5)
-			err = future.Error()
-			if err != nil {
-				http.Error(w, fmt.Sprintf("AddVoter error: %v", err), http.StatusInternalServerError)
-				return
-			}
-			fmt.Fprintf(w, "AddVoter succeeded")
-		} else {
-			http.NotFound(w, req)
-			return
-		}
-	})
-	adminServer := &http.Server{
-		Addr:    s.options.adminAddress,
-		Handler: adminMux,
-	}
-	go func() { log.Fatal(adminServer.ListenAndServe()) }()
+	go func() { log.Fatal(s.adminServer.ListenAndServe()) }()
 
 	log.Printf("listening for ZooKeeper clients on %v", s.options.clientAddress)
-	juteServer := &JuteServer{handler: s.handler}
-	err := juteServer.Listen(s.options.clientAddress)
+	zkcpServer := &ZKCPServer{handler: s.zkcpHandler}
+	err := zkcpServer.Listen(s.options.clientAddress)
 	if err != nil {
 		return fmt.Errorf("error listening: %v", err)
 	}
@@ -493,10 +441,12 @@ func main() {
 	}
 
 	s.logAppender = newLogAppender(s.raft.handle, streamLayers[COMMAND_FORWARDER])
-	s.failureDetector = newFailureDetector(s.stateMachine, s.raft.handle, streamLayers[FAILURE_DETECTOR],
+	s.failureDetector = newFailureDetector(s.raft.handle, streamLayers[FAILURE_DETECTOR],
 		s.options.serverId, HEARTBEAT_INTERVAL)
 
 	go s.expireSessions()
+
+	s.adminServer = newAdminServer(s)
 
 	err = s.serve()
 	if err != nil {

@@ -15,18 +15,19 @@ import (
 	"github.com/hashicorp/raft"
 
 	"salesforce.com/zoolater/intframe"
-	"salesforce.com/zoolater/leadernet"
 )
 
 type logAppender struct {
 	raft   *raft.Raft
-	dialer *leadernet.LeaderNet
+	dialer *LeaderNet
 }
 
+// If leader, appends commands to the local Raft log. Otherwise, forwards
+// commands to the Raft leader.
 func newLogAppender(raft *raft.Raft, streamLayer raft.StreamLayer) *logAppender {
 	a := &logAppender{
 		raft:   raft,
-		dialer: leadernet.New(raft, streamLayer),
+		dialer: NewLeaderNet(raft, streamLayer),
 	}
 	go a.listen(streamLayer)
 	return a
@@ -83,7 +84,7 @@ func (a *logAppender) Append(cmd []byte, doneCh <-chan struct{}) <-chan error {
 	errCh := make(chan error, 1)
 
 	conn, cached, err := a.dialer.Dial(time.Second)
-	if err == leadernet.ErrLocal {
+	if err == ErrLocal {
 		log.Printf("Appending command locally")
 		future := a.raft.Apply(cmd, 0)
 		go func() {

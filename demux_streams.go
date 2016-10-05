@@ -15,32 +15,36 @@ import (
 	"github.com/hashicorp/raft"
 )
 
+type Subport byte
+
 type demuxStreamLayer struct {
 	real    raft.StreamLayer
 	mutex   sync.Mutex
-	targets map[byte]*demuxTarget
+	targets map[Subport]*demuxTarget
 }
 
 type demuxTarget struct {
-	discriminator byte
-	stream        *demuxStreamLayer
-	queue         chan net.Conn
+	port   Subport
+	stream *demuxStreamLayer
+	queue  chan net.Conn
 }
 
-func NewDemuxStreamLayer(real raft.StreamLayer, first byte, discriminators ...byte) map[byte]raft.StreamLayer {
+// Share a listener on a single TCP port across multiple sub-protocols,
+// as identified by Subport integers.
+func NewDemuxStreamLayer(real raft.StreamLayer, first Subport, subports ...Subport) map[Subport]raft.StreamLayer {
 	stream := &demuxStreamLayer{
 		real:    real,
-		targets: make(map[byte]*demuxTarget),
+		targets: make(map[Subport]*demuxTarget),
 	}
-	ret := make(map[byte]raft.StreamLayer)
-	for _, dis := range append(discriminators, first) {
+	ret := make(map[Subport]raft.StreamLayer)
+	for _, port := range append(subports, first) {
 		target := &demuxTarget{
-			discriminator: dis,
-			stream:        stream,
-			queue:         make(chan net.Conn, 5),
+			port:   port,
+			stream: stream,
+			queue:  make(chan net.Conn, 5),
 		}
-		stream.targets[dis] = target
-		ret[dis] = target
+		stream.targets[port] = target
+		ret[port] = target
 	}
 	go stream.acceptLoop()
 	return ret
@@ -61,17 +65,17 @@ func (stream *demuxStreamLayer) handle(conn net.Conn) {
 	buf := []byte{0}
 	_, err := io.ReadFull(conn, buf)
 	if err != nil {
-		log.Printf("Error reading discriminator byte: %v", err)
+		log.Printf("Error reading sub-port byte: %v", err)
 		conn.Close()
 		return
 	}
-	stream.enqueue(buf[0], conn)
+	stream.enqueue(Subport(buf[0]), conn)
 }
 
-func (stream *demuxStreamLayer) enqueue(discriminator byte, conn net.Conn) {
+func (stream *demuxStreamLayer) enqueue(port Subport, conn net.Conn) {
 	stream.mutex.Lock()
 	defer stream.mutex.Unlock()
-	target, ok := stream.targets[discriminator]
+	target, ok := stream.targets[port]
 	if !ok {
 		conn.Close()
 		log.Printf("Got connection for unknown target")
@@ -79,16 +83,16 @@ func (stream *demuxStreamLayer) enqueue(discriminator byte, conn net.Conn) {
 	}
 	select {
 	case target.queue <- conn:
-		log.Printf("Queued connection for target %v", discriminator)
+		log.Printf("Queued connection for target subport %v", port)
 	default:
 		conn.Close()
-		log.Printf("Got connection for target %v with full queue", discriminator)
+		log.Printf("Got connection for target subport %v with full queue", port)
 	}
 }
 
 func (target *demuxTarget) Accept() (net.Conn, error) {
 	conn := <-target.queue
-	log.Printf("Returning connection for target %v", target.discriminator)
+	log.Printf("Returning connection for target subport %v", target.port)
 	return conn, nil
 }
 
@@ -103,7 +107,7 @@ func (target *demuxTarget) Close() error {
 			draining = false
 		}
 	}
-	delete(target.stream.targets, target.discriminator)
+	delete(target.stream.targets, target.port)
 	close := (len(target.stream.targets) == 0)
 	target.stream.mutex.Unlock()
 	if close {
@@ -122,7 +126,7 @@ func (target *demuxTarget) Dial(address raft.ServerAddress, timeout time.Duratio
 	if err != nil {
 		return nil, err
 	}
-	_, err = conn.Write([]byte{target.discriminator})
+	_, err = conn.Write([]byte{byte(target.port)})
 	if err != nil {
 		conn.Close()
 		return nil, err

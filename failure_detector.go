@@ -14,28 +14,24 @@ import (
 	"time"
 
 	"github.com/hashicorp/raft"
-
-	"salesforce.com/zoolater/leadernet"
-	"salesforce.com/zoolater/statemachine"
 )
 
 type failureDetector struct {
-	stateMachine      *statemachine.StateMachine
-	dialer            *leadernet.LeaderNet
+	dialer            *LeaderNet
 	serverId          uint64
 	lastContactMutex  sync.Mutex
 	lastContact       map[uint64]time.Time
 	lastLeaderContact time.Time
 }
 
-func newFailureDetector(stateMachine *statemachine.StateMachine,
-	raft *raft.Raft, streamLayer raft.StreamLayer, serverId uint64,
-	interval time.Duration) *failureDetector {
+// As a follower, pings the Raft leader every 'interval'. As a leader, receives
+// pings from the other servers.
+func newFailureDetector(raft *raft.Raft, streamLayer raft.StreamLayer,
+	serverId uint64, interval time.Duration) *failureDetector {
 	fd := &failureDetector{
-		stateMachine: stateMachine,
-		dialer:       leadernet.New(raft, streamLayer),
-		serverId:     serverId,
-		lastContact:  make(map[uint64]time.Time),
+		dialer:      NewLeaderNet(raft, streamLayer),
+		serverId:    serverId,
+		lastContact: make(map[uint64]time.Time),
 	}
 	go fd.listen(streamLayer)
 	go fd.heartbeatLoop(interval)
@@ -110,7 +106,7 @@ func (fd *failureDetector) heartbeat() {
 func (fd *failureDetector) tryHeartbeat() error {
 	conn, cached, err := fd.dialer.Dial(time.Second)
 	start := time.Now()
-	if err == leadernet.ErrLocal {
+	if err == ErrLocal {
 		fd.lastContactMutex.Lock()
 		fd.lastContact[fd.serverId] = start
 		fd.lastContactMutex.Unlock()

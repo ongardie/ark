@@ -5,6 +5,9 @@ hashicorp/raft is licensed uner the Mozilla Public License, version 2.0.
 The Salesforce modifications are:
 Copyright (c) 2016, salesforce.com, inc.
 All rights reserved.
+
+The purpose of this file is to export a raft.StreamLayer for use with
+demux_streams.go, so that multiple protocols can share a listening TCP port.
 */
 
 package main

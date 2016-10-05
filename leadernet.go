@@ -3,7 +3,7 @@
  * All rights reserved.
  */
 
-package leadernet
+package main
 
 import (
 	"errors"
@@ -40,7 +40,8 @@ var (
 	ErrLocal = errors.New("leader is local")
 )
 
-func New(raft *raft.Raft, streamLayer raft.StreamLayer) *LeaderNet {
+// Returns cached connections to the Raft leader.
+func NewLeaderNet(raft *raft.Raft, streamLayer raft.StreamLayer) *LeaderNet {
 	return &LeaderNet{
 		raft:        raft,
 		streamLayer: streamLayer,
