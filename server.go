@@ -397,9 +397,9 @@ func main() {
 		"local Server ID (must be unique across Raft cluster; required)")
 	flags.StringVar(&s.options.peerAddress, "peeraddr", "",
 		"local address given to other servers (required)")
-	flags.StringVar(&s.options.clientAddress, "clientaddr", "0:2181",
+	flags.StringVar(&s.options.clientAddress, "clientaddr", "0.0.0.0:2181",
 		"local address on which to listen for client requests")
-	flags.StringVar(&s.options.adminAddress, "adminaddr", "0:2182",
+	flags.StringVar(&s.options.adminAddress, "adminaddr", "0.0.0.0:2182",
 		"local address on which to listen for management requests")
 	flags.StringVar(&s.options.storeDir, "store", "store",
 		"directory to store Raft log and snapshots")
