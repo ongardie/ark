@@ -2,7 +2,9 @@
 <!DOCTYPE rfc SYSTEM "rfc2629.dtd" [
 <!ENTITY RFC2119 SYSTEM "http://xml.resource.org/public/rfc/bibxml/reference.RFC.2119.xml">
 <!ENTITY RFC3552 SYSTEM "http://xml.resource.org/public/rfc/bibxml/reference.RFC.3552.xml">
+<!ENTITY RFC4422 SYSTEM "http://xml.resource.org/public/rfc/bibxml/reference.RFC.4422.xml">
 <!ENTITY RFC5226 SYSTEM "http://xml.resource.org/public/rfc/bibxml/reference.RFC.5226.xml">
+<!ENTITY RFC7414 SYSTEM "http://xml.resource.org/public/rfc/bibxml/reference.RFC.7414.xml">
 ]>
 <?xml-stylesheet type='text/xsl' href='rfc2629.xslt' ?>
 <?rfc strict="yes" ?>
@@ -46,11 +48,112 @@
 
   <middle>
     <section title="Introduction">
-      <section title="Requirements Language">
+      <t>ZooKeeper stores coordination data on a group of servers for clients to access. Clients access and modify the data by connecting to any server in the group and issuing requests.</t>
+
+      <t>ZooKeeper clients typically access ZooKeeper servers using a client library, such as the Java or C clients included in Apache ZooKepeer or an "unofficial" client library. While several unofficial client libraries exist, the protocol they use has not been documented precisely until now. This document aims to document the existing protocol to promote interoperability across client library and server implementations.</t>
+
+      <t>ZooKeeper clients and servers exchange discrete <spanx>packets</spanx> over <xref target="RFC7414">TCP</xref> connections. They frame each packet by prepending the length of the packet, as described in <xref target="framing" />.</t>
+
+      <t>The contents of each packet are encoded using a format called Jute, as described in <xref target="jute" />.</t>
+
+      <t>Basic data types that are used widely are introduced in <xref target="types" />.</t>
+
+      <section title="Conventions">
+        <t>The terminology used in Apache ZooKeeper is preferred.</t>
+
         <t>The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
           "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
           document are to be interpreted as described in <xref
           target="RFC2119">RFC 2119</xref>.</t>
+        </section>
+      </section>
+
+      <section anchor="framing" title="Packet Framing">
+        <t>Every packet sent by a ZooKeeper client or server is preceded by 4 bytes indicating the length of the data in the packet. The length is encoded in network byte order (big endian).</t>
+
+        <t>TODO: is 0 length ok? how big can a packet be?</t>
+
+        <figure align="left">
+          <artwork align="left"><![CDATA[
++-----------+----------------+
+|  length   |     data       |
+| (4 bytes) | (length bytes) |
++-----------+----------------+]]></artwork>
+        </figure>
+      </section>
+
+      <section anchor="jute" title="Jute Encoding">
+        <t>Jute is a simple encoding scheme that assumes the recipient knows the exact schema for the data. The following types are defined and used in the ZooKeeper client protocol.</t>
+
+        <section title="Booleans">
+          <t>True is encoded as a single byte with value 1. False is encoded as the single byte with value 0.</t>
+        </section>
+
+        <section title="Signed Integers">
+          <t>A 32-bit signed integer is encoded as four bytes in network byte order. A 64-bit signed integer is encoded as eight bytes in network byte order.</t>
+        </section>
+
+        <section title="Strings and Byte Arrays">
+          <t>A string or byte array is encoded as its length in bytes as a 32-bit signed integer, followed by the bytes themselves. TODO: or is it length in unichode char points for strings?</t>
+
+          <t>A byte array of 0 length is encoded as the four bytes 0xFF 0xFF 0xFF 0xFF. TODO: really? why?</t>
+        </section>
+
+        <section title="Arrays">
+          <t>An array is encoded as its number of elements as a 32-bit signed integer, followed by each element in turn.</t>
+        </section>
+
+        <section title="Structs">
+          <t>Structs are encoded as each field in turn in the order specified. As there is no special header, footer, or delimiter, some structs exist for documentation purposes only.</t>
+        </section>
+      </section>
+
+      <section anchor="types" title="Basic Data Types">
+        <t>TODO: might not need this</t>
+      </section>
+
+      <section anchor="sessions" title="Session Management">
+      </section>
+
+      <section anchor="notifications" title="Notifications">
+      </section>
+
+      <section anchor="requests" title="Requests">
+        <section title="Ping">
+        </section>
+
+        <section title="Get Children">
+          <section title="Get Children v1">
+          </section>
+          <section title="Get Children v2">
+          </section>
+        </section>
+
+        <section title="Get Data">
+        </section>
+
+        <section title="Exists">
+        </section>
+
+        <section title="Create">
+        </section>
+
+        <section title="Delete">
+        </section>
+
+        <section title="Set Data">
+        </section>
+
+        <section title="Close">
+        </section>
+
+        <section title="Sync">
+        </section>
+
+        <section title="Set Watches">
+        </section>
+
+        <section title="Multi-Ops (Transactions)">
         </section>
       </section>
 
@@ -75,6 +178,10 @@
 
       <references title="Normative References">
         &RFC2119;
+
+        &RFC4422;
+
+        &RFC7414;
       </references>
 
       <references title="Informative References">
