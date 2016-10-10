@@ -310,7 +310,7 @@
         <t>Any request may fail for the following reasons:</t>
 
         <texttable>
-          <ttcol>err value</ttcol><ttcol>Reason</ttcol>
+          <ttcol>err Value</ttcol><ttcol>Reason</ttcol>
           <c>-100</c><c>request invalid or not supported</c>
           <c>-112</c><c>client session expired</c>
           <c>-115</c><c>TODO: authentication failed</c>
@@ -561,7 +561,7 @@
           <t>type is the operation code. The client MUST set type to one of the following:</t>
 
           <texttable>
-            <ttcol>type value</ttcol><ttcol>Operation</ttcol>
+            <ttcol>type Value</ttcol><ttcol>Operation</ttcol>
             <c>1</c><c>Create</c>
             <c>2</c><c>Delete</c>
             <c>5</c><c>Set Data</c>
@@ -629,6 +629,48 @@
       </section>
 
       <section anchor="notifications" title="Notifications">
+        <t>In addition to sending responses, the server MUST send notifications to interested clients after certain events.</t>
+
+        <t>TODO: May the server generate spurious notificaitons?</t>
+
+        <t>Notifications take the following form:</t>
+
+        <figure>
+          <artwork><![CDATA[
+  +-----------+------------------+----------------+
+  |  length   |  ResponseHeader  |  WatcherEvent  |
+  +-----------+------------------+----------------+]]></artwork>
+        </figure>
+
+        <t>length is described in <xref target="framing" /> and applies to the ResponseHeader together with the WatcherEvent.</t>
+
+        <t>ResponseHeader is described in <xref target="requests" /> and encoded using Jute (<xref target="jute" />). The server MUST set the ResponseHeader's xid to -1, MUST set the zxid to that of the request which caused the notification, and MUST set err to 0.</t>
+
+        <t>WatcherEvent is encoded using Jute (<xref target="jute" />) and defined as follows:</t>
+
+        <figure>
+          <artwork><![CDATA[
+  struct WatcherEvent {
+    sint32  type
+    sint32  state
+    ustring path
+  }
+          ]]></artwork>
+        </figure>
+
+        <t>The server MUST set type to one of the following:</t>
+
+        <texttable>
+          <ttcol>type Value</ttcol><ttcol>Event Description</ttcol>
+          <c>1</c><c>znode created</c>
+          <c>2</c><c>znode deleted</c>
+          <c>3</c><c>znode data changed</c>
+          <c>4</c><c>direct child of znode created or removed</c>
+        </texttable>
+
+        <t>The server SHOULD set state to 3. TODO: always? why?</t>
+
+        <t>The server MUST set path to the absolute path of the affected znode.</t>
       </section>
 
       <section anchor="IANA" title="IANA Considerations">
