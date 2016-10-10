@@ -193,46 +193,346 @@
           <t>Upon accepting a subsequent connection from a client, the servers SHOULD disconnect existing connections from that client. TODO: how do they notify?</t>
         </section>
 
-        <section title="Session Expiration">
+        <section anchor="expiration" title="Session Expiration">
           <t>To maintian its session, a client MUST make requests more frequently than its session timeout. If a client has nothing to do, it SHOULD issue Ping requests, as described in <xref target="ping-request" />.</t>
 
           <t>The servers SHOULD expire a client's session if they have not received any requests from that client after the duration of its session timeout. They MAY grant the client additional grace period(s) beyond the client's session tiemout.</t>
         </section>
       </section>
 
+      <section title="Data Model">
+        <t>The servers maintain a tree data structure, where each node in the tree is called a znode. A znode can store a byte array of uninterpreted data, it can have named child znodes, or both.</t>
+
+        <section title="Znode Stats">
+          <t>The servers MUST maintain the following information for each znode, called a Stat structure. Of course, server implementations MAY use this representation internally or they MAY compute this Stat structure when required.</t>
+
+          <figure>
+            <artwork><![CDATA[
+  struct Stat {
+    sint32 version
+    sint32 cversion
+    sint32 aversion
+    sint64 ephemeralOwner
+    sint32 dataLength
+    sint32 numChildren
+    sint64 pzxid
+  }
+            ]]></artwork>
+          </figure>
+
+          <t>The server MUST set czxid to the server-assigned zxid of the request which created the znode.</t>
+
+          <t>The server MUST set mzxid to the server-assigned zxid of the request which last modified the znode's data (TODO: or ACL?).</t>
+
+          <t>The server MUST set version to the number of requests which have changed the znode's data (TODO: or ACL?), excluding the request which created the znode. (version MUST be 0 for newly created znodes.)</t>
+
+          <t>The server MUST set cversion to the number of requests which have created or deleted direct children of the znode. (cversion MUST be 0 for newly created znodes.)</t>
+
+          <t>The server MUST set aversion to the number of requests which have changed the znode's ACL, excluding the request which created the znode. (aversion MUST be 0 for newly created znodes.)</t>
+
+          <t>TODO: how are transactions counted?</t>
+
+          <t>TODO: overflow</t>
+
+          <t>If the znode is ephemeral, the server MUST set ephemeralOwner to the session ID of the request which created the znode. If the znode is not ephemeral, the server MUST set ephemeralOwner to 0.</t>
+
+          <t>The server MUST set dataLength to the length in bytes of the opaque data stored in the znode (possibly 0).</t>
+
+          <t>The server MUST set numChildren to the count of the direct child znodes which this znode contains (possibly 0).</t>
+
+          <t>The server MUST set pzxid to the server-assigned zxid of the request which last added or removed direct child znodes from this znode.</t>
+        </section>
+      </section>
+
       <section anchor="requests" title="Requests">
+
+        <t>Clients SHOULD issue requests of the following form on an established connection:</t>
+
+        <figure>
+          <artwork><![CDATA[
+  +-----------+-----------------+-----------+
+  |  length   |  RequestHeader  |  request  |
+  +-----------+-----------------+-----------+]]></artwork>
+        </figure>
+
+        <t>length is described in <xref target="framing" /> and applies to the RequestHeader together with the full request.</t>
+
+        <t>RequestHeader is defined as follows and encoded using Jute (<xref target="jute" />):</t>
+
+        <figure>
+          <artwork><![CDATA[
+  struct RequestHeader {
+    sint32 xid
+    sint32 opCode
+  }
+          ]]></artwork>
+        </figure>
+
+        <t>xid counts the number of requests the client has made over the connection. The client MUST set xid to 1 for its first request (TODO: verify), and to the next integer for subsequent requests. TODO: overflow.</t>
+
+        <t>opCode, sometimes called "type", identifies the operation being performed. For example, Create (<xref target="create-request" />) is invoked with opCode 1.</t>
+
+        <t>The format of the request itself is described in the following subsections and encoded using Jute (<xref target="jute" />).</t>
+
+        <t>While server implementations MAY overlap processing of requests, they MUST appear to process requests in the order received. A server MUST NOT send responses out of order.</t>
+
+        <t>If it responds, the server MUST use the following format:</t>
+
+        <figure>
+          <artwork><![CDATA[
+  +-----------+------------------+------------+
+  |  length   |  ResponseHeader  |  response  |
+  +-----------+------------------+------------+]]></artwork>
+        </figure>
+
+        <t>length is described in <xref target="framing" /> and applies to the ResponseHeader together with the full response.</t>
+
+        <t>ResponseHeader is defined as follows and encoded using Jute (<xref target="jute" />):</t>
+
+        <figure>
+          <artwork><![CDATA[
+  struct ResponseHeader {
+    sint32 xid
+    sint64 zxid
+    sint32 err
+  }
+          ]]></artwork>
+        </figure>
+
+        <t>The server MUST set xid to the xid provided by the client in the request.</t>
+
+        <t>TODO: zxid</t>
+
+        <t>The server MUST set err to 0 and add a response for requests that were processed successfully. The format of the response itself is described in the following subsections and encoded using Jute (<xref target="jute" />).</t>
+
+        <t>The server MUST set err to a defined nonzero value for requests that did not succeed. In this case, it SHOULD NOT send an additional response.</t>
+
+        <t>Any request may fail for the following reasons:</t>
+
+        <texttable>
+          <ttcol>err value</ttcol><ttcol>Reason</ttcol>
+          <c>-100</c><c>request invalid or not supported</c>
+          <c>-112</c><c>client session expired</c>
+          <c>-115</c><c>TODO: authentication failed</c>
+          <c>-116</c><c>TODO: closing</c>
+          <c>-117</c><c>TODO: nothing</c>
+          <c>-118</c><c>client session re-opened on another connection (session moved)</c>
+        </texttable>
+
+        <t>Additionally, individual requests may fail for other reasons defined in the following subsections.</t>
+
         <section anchor="ping-request" title="Ping">
+          <t>A client MUST issue Ping requests during periods of inactivity to maintain its session (see <xref target="expiration" />).</t>
+
+          <t>PingRequest and PingResponse are both empty, thus serializing as zero bytes with Jute encoding (<xref target="jute" />).</t>
+
+          <figure>
+            <artwork><![CDATA[
+  struct PingRequest {
+  }
+            ]]></artwork>
+          </figure>
+
+          <figure>
+            <artwork><![CDATA[
+  struct PingResponse {
+  }
+            ]]></artwork>
+          </figure>
         </section>
 
         <section title="Get Children">
           <section title="Get Children v1">
+            <figure>
+              <artwork><![CDATA[
+    struct GetChildrenRequestV1 {
+      ustring path
+      bool watch
+    }
+              ]]></artwork>
+            </figure>
+
+            <figure>
+              <artwork><![CDATA[
+    struct GetChildrenResponseV1 {
+      ustring[] children
+    }
+              ]]></artwork>
+            </figure>
           </section>
           <section title="Get Children v2">
+            <figure>
+              <artwork><![CDATA[
+    struct GetChildrenRequestV2 {
+      ustring path
+      bool watch
+    }
+              ]]></artwork>
+            </figure>
+
+            <figure>
+              <artwork><![CDATA[
+    struct GetChildrenResponseV2 {
+      ustring[] children
+      Stat stat
+    }
+              ]]></artwork>
+            </figure>
           </section>
         </section>
 
         <section title="Get Data">
+          <figure>
+            <artwork><![CDATA[
+  struct GetDataRequest {
+    ustring path
+    bool watch
+  }
+            ]]></artwork>
+          </figure>
+
+          <figure>
+            <artwork><![CDATA[
+  struct GetDataResponse {
+    byte[] data
+    Stat stat
+  }
+            ]]></artwork>
+          </figure>
         </section>
 
         <section title="Exists">
+          <figure>
+            <artwork><![CDATA[
+  struct ExistsRequest {
+    ustring path
+    bool watch
+  }
+            ]]></artwork>
+          </figure>
+
+          <figure>
+            <artwork><![CDATA[
+  struct ExistsResponse {
+    Stat stat
+  }
+            ]]></artwork>
+          </figure>
         </section>
 
-        <section title="Create">
+        <section anchor="create-request" title="Create">
+          <figure>
+            <artwork><![CDATA[
+  struct CreateRequest {
+    ustring path
+    byte[] data
+    ACL[] acl
+    int flags
+  }
+            ]]></artwork>
+          </figure>
+
+          <figure>
+            <artwork><![CDATA[
+  struct CreateResponse {
+    ustring path
+  }
+            ]]></artwork>
+          </figure>
         </section>
 
         <section title="Delete">
+          <figure>
+            <artwork><![CDATA[
+  struct DeleteRequest {
+    ustring path
+    sint32  version
+  }
+            ]]></artwork>
+          </figure>
+
+          <figure>
+            <artwork><![CDATA[
+  struct DeleteResponse {
+  }
+            ]]></artwork>
+          </figure>
         </section>
 
         <section title="Set Data">
+          <figure>
+            <artwork><![CDATA[
+  struct SetDataRequest {
+    ustring path
+    byte[]  data
+    sint32  version
+  }
+            ]]></artwork>
+          </figure>
+
+          <figure>
+            <artwork><![CDATA[
+  struct SetDataResponse {
+    Stat stat
+  }
+            ]]></artwork>
+          </figure>
         </section>
 
         <section title="Close">
+          <t>TODO: move elsewhere?</t>
+
+          <figure>
+            <artwork><![CDATA[
+  struct CloseRequest {
+  }
+            ]]></artwork>
+          </figure>
+
+          <figure>
+            <artwork><![CDATA[
+  struct CloseResponse {
+  }
+            ]]></artwork>
+          </figure>
         </section>
 
         <section title="Sync">
+          <figure>
+            <artwork><![CDATA[
+  struct SyncRequest {
+    ustring path
+  }
+            ]]></artwork>
+          </figure>
+
+          <figure>
+            <artwork><![CDATA[
+  struct SyncResponse {
+    ustring path
+  }
+            ]]></artwork>
+          </figure>
         </section>
 
         <section title="Set Watches">
+          <figure>
+            <artwork><![CDATA[
+  struct SetWatchesRequest {
+    sint64    relativeZxid
+    ustring[] dataWatches
+    ustring[] existWatches
+    ustring[] childWatches
+  }
+            ]]></artwork>
+          </figure>
+
+          <figure>
+            <artwork><![CDATA[
+  struct SetWatchesResponse {
+  }
+            ]]></artwork>
+          </figure>
         </section>
 
         <section title="Multi-Ops (Transactions)">
