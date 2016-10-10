@@ -242,6 +242,73 @@
 
           <t>The server MUST set pzxid to the server-assigned zxid of the request which last added or removed direct child znodes from this znode.</t>
         </section>
+
+        <section title="Access Control Lists (ACLs)">
+          <t>Each znode has an ordered list of access control rules, which are defined as follows:</t>
+
+          <figure>
+            <artwork><![CDATA[
+  struct ACL {
+    sint32   perms
+    Identity identity
+  }
+            ]]></artwork>
+          </figure>
+
+          <t>perms is the bitwise OR of the following values:</t>
+
+          <texttable>
+            <ttcol>perms Value</ttcol><ttcol>Permission</ttcol>
+            <c>1</c><c>read: identity may read data from the znode and list its direct children</c>
+            <c>2</c><c>write: identity may set data for the znode</c>
+            <c>4</c><c>create: identity may add direct child znodes</c>
+            <c>8</c><c>delete: identity may delete direct child znodes</c>
+            <c>16</c><c>admin: identity may change the ACL for the znode</c>
+          </texttable>
+
+          <t>The server SHOULD not check ACLs of ancestor znodes during path lookups.</t>
+
+          <t>The server SHOULD return the Stat for any znode to any identity who requests it.</t>
+
+          <t>The Identity is defined as follows:</t>
+
+          <figure>
+            <artwork><![CDATA[
+  struct Identity {
+    ustring scheme
+    ustring id
+  }
+            ]]></artwork>
+          </figure>
+
+          <t>The following subsections describe the defined schemes.</t>
+
+          <section title="Scheme: world">
+            <t>Servers SHOULD support a "world" scheme that has a single id called "anyone", which represents any client.</t>
+          </section>
+
+          <section title="Scheme: auth">
+            <t>Servers SHOULD support an "auth" scheme that represents any authenticated client. For the "auth" scheme, servers SHOULD ignore the id.</t>
+          </section>
+
+          <section title="Scheme: digest">
+            <t>Servers MAY support a "digest" scheme. TODO: meaning?</t>
+          </section>
+
+          <section title="Scheme: ip">
+            <t>Servers MAY support an "ip" scheme, which uses the client's IP address as its id.</t>
+
+            <t>ACL permissions MAY mask the address by appending "/n", where n is an integer number of most significant bits to check.</t>
+
+            <t>TODO: IPv4 only?</t>
+          </section>
+
+          <section title="Scheme: x509">
+            <t>Servers MAY support an "x509" scheme, which uses the client's X500 Principal as its id.</t>
+
+            <t>Servers SHOULD automatically grant clients this identity when it is available (clients SHOULD NOT need to request it explicitly).</t>
+          </section>
+        </section>
       </section>
 
       <section anchor="requests" title="Requests">
@@ -312,6 +379,7 @@
         <texttable>
           <ttcol>err Value</ttcol><ttcol>Reason</ttcol>
           <c>-100</c><c>request invalid or not supported</c>
+          <c>-102</c><c>TODO: no authentication</c>
           <c>-112</c><c>client session expired</c>
           <c>-115</c><c>TODO: authentication failed</c>
           <c>-116</c><c>TODO: closing</c>
@@ -439,6 +507,8 @@
   }
             ]]></artwork>
           </figure>
+
+          <t>Create may fail with -114 (invalid ACL specified).</t>
         </section>
 
         <section anchor="delete-request" title="Delete">
