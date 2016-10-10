@@ -50,6 +50,7 @@ func applyMulti(ctx *context, tree *Tree, cmdBuf []byte) (*Tree, []byte, NotifyE
 				Done: false,
 				Err:  proto.ErrRuntimeInconsistency,
 			})
+			break
 		}
 
 		switch opHeader.Type {
