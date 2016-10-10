@@ -341,13 +341,13 @@
           </figure>
         </section>
 
-        <section title="Get Children">
+        <section anchor="get-children-request" title="Get Children">
           <section title="Get Children v1">
             <figure>
               <artwork><![CDATA[
     struct GetChildrenRequestV1 {
       ustring path
-      bool watch
+      bool    watch
     }
               ]]></artwork>
             </figure>
@@ -365,7 +365,7 @@
               <artwork><![CDATA[
     struct GetChildrenRequestV2 {
       ustring path
-      bool watch
+      bool    watch
     }
               ]]></artwork>
             </figure>
@@ -374,19 +374,19 @@
               <artwork><![CDATA[
     struct GetChildrenResponseV2 {
       ustring[] children
-      Stat stat
+      Stat      stat
     }
               ]]></artwork>
             </figure>
           </section>
         </section>
 
-        <section title="Get Data">
+        <section anchor="get-data-request" title="Get Data">
           <figure>
             <artwork><![CDATA[
   struct GetDataRequest {
     ustring path
-    bool watch
+    bool    watch
   }
             ]]></artwork>
           </figure>
@@ -395,18 +395,18 @@
             <artwork><![CDATA[
   struct GetDataResponse {
     byte[] data
-    Stat stat
+    Stat   stat
   }
             ]]></artwork>
           </figure>
         </section>
 
-        <section title="Exists">
+        <section anchor="exists-request" title="Exists">
           <figure>
             <artwork><![CDATA[
   struct ExistsRequest {
     ustring path
-    bool watch
+    bool    watch
   }
             ]]></artwork>
           </figure>
@@ -425,9 +425,9 @@
             <artwork><![CDATA[
   struct CreateRequest {
     ustring path
-    byte[] data
-    ACL[] acl
-    int flags
+    byte[]  data
+    ACL[]   acl
+    int     flags
   }
             ]]></artwork>
           </figure>
@@ -441,7 +441,7 @@
           </figure>
         </section>
 
-        <section title="Delete">
+        <section anchor="delete-request" title="Delete">
           <figure>
             <artwork><![CDATA[
   struct DeleteRequest {
@@ -459,7 +459,7 @@
           </figure>
         </section>
 
-        <section title="Set Data">
+        <section anchor="set-data-request" title="Set Data">
           <figure>
             <artwork><![CDATA[
   struct SetDataRequest {
@@ -479,7 +479,7 @@
           </figure>
         </section>
 
-        <section title="Close">
+        <section anchor="close-request" title="Close">
           <t>TODO: move elsewhere?</t>
 
           <figure>
@@ -497,7 +497,7 @@
           </figure>
         </section>
 
-        <section title="Sync">
+        <section anchor="sync-request" title="Sync">
           <figure>
             <artwork><![CDATA[
   struct SyncRequest {
@@ -515,7 +515,7 @@
           </figure>
         </section>
 
-        <section title="Set Watches">
+        <section anchor="set-watches-request" title="Set Watches">
           <figure>
             <artwork><![CDATA[
   struct SetWatchesRequest {
@@ -535,7 +535,96 @@
           </figure>
         </section>
 
-        <section title="Multi-Ops (Transactions)">
+        <section anchor="multi-request" title="Multi (Transaction)">
+          <t>Multi Requests are encoded as follows (after the RequestHeader):</t>
+
+          <figure>
+            <artwork><![CDATA[
+  +----------------+--------+     +----------------+--------+--------+
+  |  MultiHeader 1 |  op 1  | ... |  MultiHeader n |  op n  |  done  |
+  +----------------+--------+     +----------------+--------+--------+
+            ]]></artwork>
+          </figure>
+
+          <t>Each operation is preceded by a MultiHeader.</t>
+
+          <figure>
+            <artwork><![CDATA[
+  struct MultiHeader {
+    sint32 type
+    bool   done
+    sint32 err
+  }
+            ]]></artwork>
+          </figure>
+
+          <t>type is the operation code. The client MUST set type to one of the following:</t>
+
+          <texttable>
+            <ttcol>type value</ttcol><ttcol>Operation</ttcol>
+            <c>1</c><c>Create</c>
+            <c>2</c><c>Delete</c>
+            <c>5</c><c>Set Data</c>
+            <c>13</c><c>Check Version</c>
+          </texttable>
+
+          <t>The client MUST set done to false and SHOULD set err to -1.</t>
+
+          <t>Each operation defines its own format, as described in the following subsections.</t>
+
+          <t>Following the final operation, the client MUST set done to a MultiHeader with type set to -1, done set to true, and err set to -1.</t>
+
+          <t>Multi Responses are encoded as follows (after the ResponseHeader):</t>
+          <figure>
+            <artwork><![CDATA[
+  +----------------+-----------+     +----------------+-----------+--------+
+  |  MultiHeader 1 |  reply 1  | ... |  MultiHeader n |  reply n  |  done  |
+  +----------------+-----------+     +----------------+-----------+--------+
+            ]]></artwork>
+          </figure>
+
+          <t>The replies correspond to the operations in the request, in order. Each reply is preceded by a MultiHeader.</t>
+
+          <t>The server MUST set done in each operation's MultiHeader to false.</t>
+
+          <t>For each operation in a successful multi request, the server MUST set type to the operation code sent in the request, MUST set err to 0, and MUST include the operation-specific reply as defined in the following subsections.</t>
+
+          <t>For each operation in a failed multi request, the server MUST set type to -1. The err value for the first operation to fail in a Multi request MUST be one defined by the following subsections. The err value for all preceding operations MUST be 0 and for all subsequent operations MUST be -2. In place of a reply, the server MUST send a MultiErrorResponse with the same err value.</t>
+
+          <figure>
+            <artwork><![CDATA[
+  struct MultiErrorResponse {
+    sint32 err
+  }
+            ]]></artwork>
+          </figure>
+
+          <section title="Multi: Create">
+            <t>Multi Create is the same as normal Create requests (<xref target="create-request" />).</t>
+          </section>
+          <section title="Multi: Delete">
+            <t>Multi Create is the same as normal Delete requests (<xref target="delete-request" />).</t>
+          </section>
+          <section title="Multi: Set Data">
+            <t>Multi Create is the same as normal Set Data requests (<xref target="set-data-request" />).</t>
+          </section>
+          <section title="Multi: Check Version">
+            <figure>
+              <artwork><![CDATA[
+  struct CheckVersionRequest {
+    ustring path
+    sint32 version
+  }
+              ]]></artwork>
+            </figure>
+
+            <figure>
+              <artwork><![CDATA[
+  struct CheckVersionResponse {
+  }
+              ]]></artwork>
+            </figure>
+          </section>
         </section>
       </section>
 
