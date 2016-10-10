@@ -113,13 +113,95 @@
       </section>
 
       <section anchor="sessions" title="Session Management">
-      </section>
 
-      <section anchor="notifications" title="Notifications">
+        <section title="Initial Connection Setup">
+
+          <t>Clients connect to a server of their choice over TCP and immediately issue a Connect Request (preceded by the size in bytes of the Connect Request, as described in <xref target="framing" />, and encoded with Jute, as described in <xref target="jute" />). Clients may send a ConnectRequestV1 or a ConnectRequestV2, which adds an additional 'readOnly' field.</t>
+
+          <figure>
+            <artwork><![CDATA[
+  struct ConnectRequestV1 {
+    sint32 protocolVersion
+    sint64 lastZxidSeen
+    sint32 timeOut
+    sint64 sessionId
+    byte[] passwd
+  }
+            ]]></artwork>
+          </figure>
+          <figure>
+            <artwork><![CDATA[
+  struct ConnectRequestV2 {
+    sint32 protocolVersion
+    sint64 lastZxidSeen
+    sint32 timeOut
+    sint64 sessionId
+    byte[] passwd
+    bool   readOnly
+  }
+            ]]></artwork>
+          </figure>
+
+          <t>The client MUST set protocolVersion to 0.</t>
+
+          <t>For an initial connection with no existing session, the client MUST set lastZxidSeen to 0, it MUST set sessionId to 0, and it SHOULD set passwd to a 16-byte array of zeros.</t>
+
+          <t>The client SHOULD set timeOut to a positive integer representing the desired duration for the client's session timeout, measured in milliseconds.</t>
+
+          <t>TODO: what does readOnly mean?</t>
+
+          <t>The server MAY respond with either ConnectResponseV1 or ConnectResponseV2 (preceded by its length, as described in <xref target="framing" />, and encoded with Jute, as described in <xref target="jute" />).</t>
+
+          <figure>
+            <artwork><![CDATA[
+  struct ConnectResponseV1 {
+    sint32 protocolVersion
+    sint32 timeOut
+    sint64 sessionId
+    byte[] passwd
+  }
+            ]]></artwork>
+          </figure>
+          <figure>
+            <artwork><![CDATA[
+  struct ConnectResponseV2 {
+    sint32 protocolVersion
+    sint32 timeOut
+    sint64 sessionId
+    byte[] passwd
+    bool   readOnly
+  }
+            ]]></artwork>
+          </figure>
+
+          <t>The server MUST set protocolVersion to 0.</t>
+
+          <t>The server MUST set timeOut to a positive integer representing the actual duration of the client's session timeout, measured in milliseconds.</t>
+
+          <t>The server MUST set sessionId to a positive integer which opaquely identifies the client's session. It SHOULD set passwd to a value that is difficult for other clients to guess, which SHOULD be 16 bytes in length.</t>
+
+          <t>TODO: what does readOnly mean?</t>
+
+          <t>After receiving a Connect Response, the client MAY issue requests, as described in <xref target="requests" />.</t>
+        </section>
+
+        <section title="Subsequent Connection Setup">
+          <t>After its initial connection, the client may attempt to reconnect to any server while maintaining its session. To do so, it should send a Connect Request with the sessionId and passwd fields set to those provided by the server in the initial Connect Response.</t>
+
+          <t>TODO: how does the server indicate session expired or bad password?</t>
+
+          <t>Upon accepting a subsequent connection from a client, the servers SHOULD disconnect existing connections from that client. TODO: how do they notify?</t>
+        </section>
+
+        <section title="Session Expiration">
+          <t>To maintian its session, a client MUST make requests more frequently than its session timeout. If a client has nothing to do, it SHOULD issue Ping requests, as described in <xref target="ping-request" />.</t>
+
+          <t>The servers SHOULD expire a client's session if they have not received any requests from that client after the duration of its session timeout. They MAY grant the client additional grace period(s) beyond the client's session tiemout.</t>
+        </section>
       </section>
 
       <section anchor="requests" title="Requests">
-        <section title="Ping">
+        <section anchor="ping-request" title="Ping">
         </section>
 
         <section title="Get Children">
@@ -155,6 +237,9 @@
 
         <section title="Multi-Ops (Transactions)">
         </section>
+      </section>
+
+      <section anchor="notifications" title="Notifications">
       </section>
 
       <section anchor="IANA" title="IANA Considerations">
