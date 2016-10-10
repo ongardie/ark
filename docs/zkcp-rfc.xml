@@ -56,8 +56,6 @@
 
       <t>The contents of each packet are encoded using a format called Jute, as described in <xref target="jute" />.</t>
 
-      <t>Basic data types that are used widely are introduced in <xref target="types" />.</t>
-
       <section title="Conventions">
         <t>The terminology used in Apache ZooKeeper is preferred.</t>
 
@@ -65,138 +63,6 @@
           "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
           document are to be interpreted as described in <xref
           target="RFC2119">RFC 2119</xref>.</t>
-        </section>
-      </section>
-
-      <section anchor="framing" title="Packet Framing">
-        <t>Every packet sent by a ZooKeeper client or server is preceded by 4 bytes indicating the length of the data in the packet. The length is encoded in network byte order (big endian).</t>
-
-        <t>TODO: is 0 length ok? how big can a packet be?</t>
-
-        <figure align="left">
-          <artwork align="left"><![CDATA[
-+-----------+----------------+
-|  length   |     data       |
-| (4 bytes) | (length bytes) |
-+-----------+----------------+]]></artwork>
-        </figure>
-      </section>
-
-      <section anchor="jute" title="Jute Encoding">
-        <t>Jute is a simple encoding scheme that assumes the recipient knows the exact schema for the data. The following types are defined and used in the ZooKeeper client protocol.</t>
-
-        <section title="Booleans">
-          <t>True is encoded as a single byte with value 1. False is encoded as the single byte with value 0.</t>
-        </section>
-
-        <section title="Signed Integers">
-          <t>A 32-bit signed integer is encoded as four bytes in network byte order. A 64-bit signed integer is encoded as eight bytes in network byte order.</t>
-        </section>
-
-        <section title="Strings and Byte Arrays">
-          <t>A string or byte array is encoded as its length in bytes as a 32-bit signed integer, followed by the bytes themselves. TODO: or is it length in unichode char points for strings?</t>
-
-          <t>A byte array of 0 length is encoded as the four bytes 0xFF 0xFF 0xFF 0xFF. TODO: really? why?</t>
-        </section>
-
-        <section title="Arrays">
-          <t>An array is encoded as its number of elements as a 32-bit signed integer, followed by each element in turn.</t>
-        </section>
-
-        <section title="Structs">
-          <t>Structs are encoded as each field in turn in the order specified. As there is no special header, footer, or delimiter, some structs exist for documentation purposes only.</t>
-        </section>
-      </section>
-
-      <section anchor="types" title="Basic Data Types">
-        <t>TODO: might not need this</t>
-      </section>
-
-      <section anchor="sessions" title="Session Management">
-
-        <section title="Initial Connection Setup">
-
-          <t>Clients connect to a server of their choice over TCP and immediately issue a Connect Request (preceded by the size in bytes of the Connect Request, as described in <xref target="framing" />, and encoded with Jute, as described in <xref target="jute" />). Clients may send a ConnectRequestV1 or a ConnectRequestV2, which adds an additional 'readOnly' field.</t>
-
-          <figure>
-            <artwork><![CDATA[
-  struct ConnectRequestV1 {
-    sint32 protocolVersion
-    sint64 lastZxidSeen
-    sint32 timeOut
-    sint64 sessionId
-    byte[] passwd
-  }
-            ]]></artwork>
-          </figure>
-          <figure>
-            <artwork><![CDATA[
-  struct ConnectRequestV2 {
-    sint32 protocolVersion
-    sint64 lastZxidSeen
-    sint32 timeOut
-    sint64 sessionId
-    byte[] passwd
-    bool   readOnly
-  }
-            ]]></artwork>
-          </figure>
-
-          <t>The client MUST set protocolVersion to 0.</t>
-
-          <t>For an initial connection with no existing session, the client MUST set lastZxidSeen to 0, it MUST set sessionId to 0, and it SHOULD set passwd to a 16-byte array of zeros.</t>
-
-          <t>The client SHOULD set timeOut to a positive integer representing the desired duration for the client's session timeout, measured in milliseconds.</t>
-
-          <t>TODO: what does readOnly mean?</t>
-
-          <t>The server MAY respond with either ConnectResponseV1 or ConnectResponseV2 (preceded by its length, as described in <xref target="framing" />, and encoded with Jute, as described in <xref target="jute" />).</t>
-
-          <figure>
-            <artwork><![CDATA[
-  struct ConnectResponseV1 {
-    sint32 protocolVersion
-    sint32 timeOut
-    sint64 sessionId
-    byte[] passwd
-  }
-            ]]></artwork>
-          </figure>
-          <figure>
-            <artwork><![CDATA[
-  struct ConnectResponseV2 {
-    sint32 protocolVersion
-    sint32 timeOut
-    sint64 sessionId
-    byte[] passwd
-    bool   readOnly
-  }
-            ]]></artwork>
-          </figure>
-
-          <t>The server MUST set protocolVersion to 0.</t>
-
-          <t>The server MUST set timeOut to a positive integer representing the actual duration of the client's session timeout, measured in milliseconds.</t>
-
-          <t>The server MUST set sessionId to a positive integer which opaquely identifies the client's session. It SHOULD set passwd to a value that is difficult for other clients to guess, which SHOULD be 16 bytes in length.</t>
-
-          <t>TODO: what does readOnly mean?</t>
-
-          <t>After receiving a Connect Response, the client MAY issue requests, as described in <xref target="requests" />.</t>
-        </section>
-
-        <section title="Subsequent Connection Setup">
-          <t>After its initial connection, the client may attempt to reconnect to any server while maintaining its session. To do so, it should send a Connect Request with the sessionId and passwd fields set to those provided by the server in the initial Connect Response.</t>
-
-          <t>TODO: how does the server indicate session expired or bad password?</t>
-
-          <t>Upon accepting a subsequent connection from a client, the servers SHOULD disconnect existing connections from that client. TODO: how do they notify?</t>
-        </section>
-
-        <section anchor="expiration" title="Session Expiration">
-          <t>To maintian its session, a client MUST make requests more frequently than its session timeout. If a client has nothing to do, it SHOULD issue Ping requests, as described in <xref target="ping-request" />.</t>
-
-          <t>The servers SHOULD expire a client's session if they have not received any requests from that client after the duration of its session timeout. They MAY grant the client additional grace period(s) beyond the client's session tiemout.</t>
         </section>
       </section>
 
@@ -308,6 +174,135 @@
 
             <t>Servers SHOULD automatically grant clients this identity when it is available (clients SHOULD NOT need to request it explicitly).</t>
           </section>
+        </section>
+      </section>
+
+
+      <section anchor="framing" title="Packet Framing">
+        <t>Every packet sent by a ZooKeeper client or server is preceded by 4 bytes indicating the length of the data in the packet. The length is encoded in network byte order (big endian).</t>
+
+        <t>TODO: is 0 length ok? how big can a packet be?</t>
+
+        <figure align="left">
+          <artwork align="left"><![CDATA[
++-----------+----------------+
+|  length   |     data       |
+| (4 bytes) | (length bytes) |
++-----------+----------------+]]></artwork>
+        </figure>
+      </section>
+
+      <section anchor="jute" title="Jute Encoding">
+        <t>Jute is a simple encoding scheme that assumes the recipient knows the exact schema for the data. The following types are defined and used in the ZooKeeper client protocol.</t>
+
+        <section title="Booleans">
+          <t>True is encoded as a single byte with value 1. False is encoded as the single byte with value 0.</t>
+        </section>
+
+        <section title="Signed Integers">
+          <t>A 32-bit signed integer is encoded as four bytes in network byte order. A 64-bit signed integer is encoded as eight bytes in network byte order.</t>
+        </section>
+
+        <section title="Strings and Byte Arrays">
+          <t>A string or byte array is encoded as its length in bytes as a 32-bit signed integer, followed by the bytes themselves. TODO: or is it length in unichode char points for strings?</t>
+
+          <t>A byte array of 0 length is encoded as the four bytes 0xFF 0xFF 0xFF 0xFF. TODO: really? why?</t>
+        </section>
+
+        <section title="Arrays">
+          <t>An array is encoded as its number of elements as a 32-bit signed integer, followed by each element in turn.</t>
+        </section>
+
+        <section title="Structs">
+          <t>Structs are encoded as each field in turn in the order specified. As there is no special header, footer, or delimiter, some structs exist for documentation purposes only.</t>
+        </section>
+      </section>
+
+      <section anchor="sessions" title="Session Management">
+
+        <section title="Initial Connection Setup">
+
+          <t>Clients connect to a server of their choice over TCP and immediately issue a Connect Request (preceded by the size in bytes of the Connect Request, as described in <xref target="framing" />, and encoded with Jute, as described in <xref target="jute" />). Clients may send a ConnectRequestV1 or a ConnectRequestV2, which adds an additional 'readOnly' field.</t>
+
+          <figure>
+            <artwork><![CDATA[
+  struct ConnectRequestV1 {
+    sint32 protocolVersion
+    sint64 lastZxidSeen
+    sint32 timeOut
+    sint64 sessionId
+    byte[] passwd
+  }
+            ]]></artwork>
+          </figure>
+          <figure>
+            <artwork><![CDATA[
+  struct ConnectRequestV2 {
+    sint32 protocolVersion
+    sint64 lastZxidSeen
+    sint32 timeOut
+    sint64 sessionId
+    byte[] passwd
+    bool   readOnly
+  }
+            ]]></artwork>
+          </figure>
+
+          <t>The client MUST set protocolVersion to 0.</t>
+
+          <t>For an initial connection with no existing session, the client MUST set lastZxidSeen to 0, it MUST set sessionId to 0, and it SHOULD set passwd to a 16-byte array of zeros.</t>
+
+          <t>The client SHOULD set timeOut to a positive integer representing the desired duration for the client's session timeout, measured in milliseconds.</t>
+
+          <t>TODO: what does readOnly mean?</t>
+
+          <t>The server MAY respond with either ConnectResponseV1 or ConnectResponseV2 (preceded by its length, as described in <xref target="framing" />, and encoded with Jute, as described in <xref target="jute" />).</t>
+
+          <figure>
+            <artwork><![CDATA[
+  struct ConnectResponseV1 {
+    sint32 protocolVersion
+    sint32 timeOut
+    sint64 sessionId
+    byte[] passwd
+  }
+            ]]></artwork>
+          </figure>
+          <figure>
+            <artwork><![CDATA[
+  struct ConnectResponseV2 {
+    sint32 protocolVersion
+    sint32 timeOut
+    sint64 sessionId
+    byte[] passwd
+    bool   readOnly
+  }
+            ]]></artwork>
+          </figure>
+
+          <t>The server MUST set protocolVersion to 0.</t>
+
+          <t>The server MUST set timeOut to a positive integer representing the actual duration of the client's session timeout, measured in milliseconds.</t>
+
+          <t>The server MUST set sessionId to a positive integer which opaquely identifies the client's session. It SHOULD set passwd to a value that is difficult for other clients to guess, which SHOULD be 16 bytes in length.</t>
+
+          <t>TODO: what does readOnly mean?</t>
+
+          <t>After receiving a Connect Response, the client MAY issue requests, as described in <xref target="requests" />.</t>
+        </section>
+
+        <section title="Subsequent Connection Setup">
+          <t>After its initial connection, the client may attempt to reconnect to any server while maintaining its session. To do so, it should send a Connect Request with the sessionId and passwd fields set to those provided by the server in the initial Connect Response.</t>
+
+          <t>TODO: how does the server indicate session expired or bad password?</t>
+
+          <t>Upon accepting a subsequent connection from a client, the servers SHOULD disconnect existing connections from that client. TODO: how do they notify?</t>
+        </section>
+
+        <section anchor="expiration" title="Session Expiration">
+          <t>To maintian its session, a client MUST make requests more frequently than its session timeout. If a client has nothing to do, it SHOULD issue Ping requests, as described in <xref target="ping-request" />.</t>
+
+          <t>The servers SHOULD expire a client's session if they have not received any requests from that client after the duration of its session timeout. They MAY grant the client additional grace period(s) beyond the client's session tiemout.</t>
         </section>
       </section>
 
