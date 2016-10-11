@@ -21,7 +21,14 @@ type Tree struct {
 }
 
 func NewTree() *Tree {
-	return &Tree{}
+	return &Tree{
+		acl: []proto.ACL{
+			proto.ACL{
+				Perms:    proto.PermAll,
+				Identity: proto.Identity{Scheme: "world", ID: "anyone"},
+			},
+		},
+	}
 }
 
 func splitPath(path proto.Path) []proto.Component {
@@ -123,6 +130,11 @@ func (t *Tree) Create(ctx *context, req *proto.CreateRequest) (*Tree, *proto.Cre
 	var do func(node *Tree, component int) (*Tree, proto.ErrCode)
 	do = func(node *Tree, component int) (*Tree, proto.ErrCode) {
 		if component == len(components)-1 {
+			errCode := checkACL(ctx.identity, proto.PermCreate, node.acl)
+			if errCode != proto.ErrOk {
+				return nil, errCode
+			}
+
 			if node.stat.EphemeralOwner > 0 {
 				return nil, proto.ErrNoChildrenForEphemerals
 			}
@@ -200,6 +212,10 @@ func (t *Tree) Delete(ctx *context, req *proto.DeleteRequest) (*Tree, *proto.Del
 	var do func(node *Tree, components []proto.Component) (*Tree, proto.ErrCode)
 	do = func(node *Tree, components []proto.Component) (*Tree, proto.ErrCode) {
 		if len(components) == 1 {
+			errCode := checkACL(ctx.identity, proto.PermDelete, node.acl)
+			if errCode != proto.ErrOk {
+				return nil, errCode
+			}
 			target, ok := node.children[components[0]]
 			if !ok {
 				return nil, proto.ErrNoNode
@@ -276,6 +292,10 @@ func (t *Tree) GetChildren2(ctx *context, req *proto.GetChildren2Request) (*prot
 	if target == nil {
 		return nil, register, proto.ErrNoNode
 	}
+	errCode := checkACL(ctx.identity, proto.PermRead, target.acl)
+	if errCode != proto.ErrOk {
+		return nil, nil, errCode
+	}
 	resp := &proto.GetChildren2Response{}
 	resp.Children = make([]proto.Component, 0, len(target.children))
 	for name := range target.children {
@@ -302,11 +322,26 @@ func (t *Tree) CheckVersion(ctx *context, req *proto.CheckVersionRequest) (*prot
 	return &proto.CheckVersionResponse{}, proto.ErrOk
 }
 
+func (t *Tree) GetACL(ctx *context, req *proto.GetAclRequest) (*proto.GetAclResponse, RegisterEvents, proto.ErrCode) {
+	target := t.lookup(req.Path)
+	if target == nil {
+		return nil, nil, proto.ErrNoNode
+	}
+	return &proto.GetAclResponse{
+		Acl:  target.acl,
+		Stat: target.stat,
+	}, nil, proto.ErrOk
+}
+
 func (t *Tree) GetData(ctx *context, req *proto.GetDataRequest) (*proto.GetDataResponse, RegisterEvents, proto.ErrCode) {
 	var register RegisterEvents
 	target := t.lookup(req.Path)
 	if target == nil {
 		return nil, register, proto.ErrNoNode
+	}
+	errCode := checkACL(ctx.identity, proto.PermRead, target.acl)
+	if errCode != proto.ErrOk {
+		return nil, nil, errCode
 	}
 	resp := &proto.GetDataResponse{
 		Data: target.data,
@@ -329,6 +364,10 @@ func (t *Tree) SetData(ctx *context, req *proto.SetDataRequest) (*Tree, *proto.S
 			if req.Version >= 0 && node.stat.Version != req.Version {
 				return nil, proto.ErrBadVersion
 			}
+			errCode := checkACL(ctx.identity, proto.PermWrite, node.acl)
+			if errCode != proto.ErrOk {
+				return nil, errCode
+			}
 			node = node.shallowClone()
 			node.data = req.Data
 			node.stat.Mzxid = ctx.zxid
@@ -343,16 +382,55 @@ func (t *Tree) SetData(ctx *context, req *proto.SetDataRequest) (*Tree, *proto.S
 			if !ok {
 				return nil, proto.ErrNoNode
 			}
-			newChild, err := do(child, components[1:])
-			if err != proto.ErrOk {
-				return nil, err
+			newChild, errCode := do(child, components[1:])
+			if errCode != proto.ErrOk {
+				return nil, errCode
 			}
 			return node.withChild(components[0], newChild), proto.ErrOk
 		}
 	}
-	root, err := do(t, splitPath(req.Path))
-	if err != proto.ErrOk {
-		return nil, nil, nil, err
+	root, errCode := do(t, splitPath(req.Path))
+	if errCode != proto.ErrOk {
+		return nil, nil, nil, errCode
+	}
+	return root, resp, notify, proto.ErrOk
+}
+
+func (t *Tree) SetACL(ctx *context, req *proto.SetAclRequest) (*Tree, *proto.SetAclResponse, NotifyEvents, proto.ErrCode) {
+	var notify NotifyEvents
+	resp := &proto.SetAclResponse{}
+	var do func(node *Tree, components []proto.Component) (*Tree, proto.ErrCode)
+	do = func(node *Tree, components []proto.Component) (*Tree, proto.ErrCode) {
+		if len(components) == 0 {
+			if req.Version >= 0 && node.stat.Version != req.Version {
+				return nil, proto.ErrBadVersion
+			}
+			errCode := checkACL(ctx.identity, proto.PermAdmin, node.acl)
+			if errCode != proto.ErrOk {
+				return nil, errCode
+			}
+			node = node.shallowClone()
+			node.acl = req.Acl
+			node.stat.Mzxid = ctx.zxid // TODO: update?
+			node.stat.Mtime = ctx.time // TODO: update?
+			node.stat.Aversion += 1    // TODO: overflow?
+			resp.Stat = node.stat
+			return node, proto.ErrOk
+		} else {
+			child, ok := node.children[components[0]]
+			if !ok {
+				return nil, proto.ErrNoNode
+			}
+			newChild, errCode := do(child, components[1:])
+			if errCode != proto.ErrOk {
+				return nil, errCode
+			}
+			return node.withChild(components[0], newChild), proto.ErrOk
+		}
+	}
+	root, errCode := do(t, splitPath(req.Path))
+	if errCode != proto.ErrOk {
+		return nil, nil, nil, errCode
 	}
 	return root, resp, notify, proto.ErrOk
 }

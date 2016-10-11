@@ -216,14 +216,16 @@ const (
 	ErrSessionMoved            ErrCode = -118
 )
 
+type Permission int32
+
 // Constants for ACL permissions
 const (
-	PermRead = 1 << iota
+	PermRead Permission = 1 << iota
 	PermWrite
 	PermCreate
 	PermDelete
 	PermAdmin
-	PermAll = 0x1f
+	PermAll Permission = 0x1f
 )
 
 var (

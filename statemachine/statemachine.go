@@ -44,6 +44,7 @@ type Connection interface {
 	String() string
 	SessionId() proto.SessionId
 	ConnId() ConnectionId
+	Identity() []proto.Identity
 }
 
 type Connections []Connection
@@ -57,6 +58,7 @@ type context struct {
 	sessionId proto.SessionId
 	connId    ConnectionId
 	cmdId     CommandId
+	identity  []proto.Identity
 }
 
 type CommandType int32
@@ -77,6 +79,7 @@ type CommandHeader1 struct {
 	CmdId     CommandId
 	Time      int64
 	Rand      []byte
+	Identity  []proto.Identity
 }
 
 type ExpireRequest struct {
@@ -349,6 +352,11 @@ func (sm *StateMachine) applyCommand(ctx *context, cmdBuf []byte) ([]byte, proto
 	case proto.OpMulti:
 		tree, respBuf, notify, errCode = applyMulti(ctx, sm.tree, reqBuf)
 
+	case proto.OpSetAcl:
+		if req := new(proto.SetAclRequest); decode(req) {
+			tree, resp, notify, errCode = sm.tree.SetACL(ctx, req)
+		}
+
 	case proto.OpSetData:
 		if req := new(proto.SetDataRequest); decode(req) {
 			tree, resp, notify, errCode = sm.tree.SetData(ctx, req)
@@ -413,6 +421,7 @@ func (sm *StateMachine) Apply(entry *raft.Log) (unused interface{}) {
 		sessionId: header.SessionId,
 		connId:    header.ConnId,
 		cmdId:     header.CmdId,
+		identity:  header.Identity,
 	}
 
 	reply := func(output []byte, errCode proto.ErrCode) {
@@ -575,6 +584,7 @@ func (sm *StateMachine) queueQuery(query *asyncQuery) {
 		sessionId: query.conn.SessionId(),
 		connId:    query.conn.ConnId(),
 		cmdId:     0,
+		identity:  query.conn.Identity(),
 	}
 
 	decode := func(req interface{}) bool {
@@ -596,6 +606,12 @@ func (sm *StateMachine) queueQuery(query *asyncQuery) {
 		if req := new(proto.ExistsRequest); decode(req) {
 			resp, register, errCode = sm.tree.Exists(ctx, req)
 			log.Printf("Exists(%+v) -> %+v", req, resp)
+		}
+
+	case proto.OpGetAcl:
+		if req := new(proto.GetAclRequest); decode(req) {
+			resp, register, errCode = sm.tree.GetACL(ctx, req)
+			log.Printf("GetACL(%+v) -> %+v", req, resp)
 		}
 
 	case proto.OpGetChildren:

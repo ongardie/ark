@@ -68,6 +68,7 @@ func (s *Server) processConnect(rpc *ConnectRPC) {
 		CmdId:     1,
 		Time:      time.Now().Unix(),
 		Rand:      getRand(proto.SessionPasswordLen),
+		Identity:  rpc.conn.Identity(),
 	}
 	headerBuf, err := jute.Encode(&header)
 	if err != nil {
@@ -110,6 +111,7 @@ func (s *Server) processCommand(rpc *RPC) {
 		CmdId:     rpc.cmdId,
 		Time:      time.Now().Unix(),
 		Rand:      getRand(proto.SessionPasswordLen),
+		Identity:  rpc.conn.Identity(),
 	}
 	headerBuf, err := jute.Encode(&header)
 	if err != nil {

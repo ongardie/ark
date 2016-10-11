@@ -71,13 +71,14 @@ type ZKCPServer struct {
 }
 
 type ZKCPConnection struct {
-	server    *ZKCPServer
-	netConn   net.Conn
-	sendQueue *InfiniteQueue
-	closeCh   chan struct{}
-	sessionId proto.SessionId
-	connId    statemachine.ConnectionId
-	lastCmdId statemachine.CommandId
+	server     *ZKCPServer
+	netConn    net.Conn
+	sendQueue  *InfiniteQueue
+	closeCh    chan struct{}
+	sessionId  proto.SessionId
+	connId     statemachine.ConnectionId
+	lastCmdId  statemachine.CommandId
+	identities []proto.Identity
 }
 
 func (conn *ZKCPConnection) String() string {
@@ -91,6 +92,10 @@ func (conn *ZKCPConnection) SessionId() proto.SessionId {
 
 func (conn *ZKCPConnection) ConnId() statemachine.ConnectionId {
 	return conn.connId
+}
+
+func (conn *ZKCPConnection) Identity() []proto.Identity {
+	return conn.identities
 }
 
 func (conn *ZKCPConnection) Notify(zxid proto.ZXID, event statemachine.TreeEvent) {
@@ -269,7 +274,23 @@ func (s *ZKCPServer) newConnection(netConn net.Conn) {
 		netConn:   netConn,
 		sendQueue: NewInfiniteQueue(),
 		closeCh:   make(chan struct{}, 1),
+		identities: []proto.Identity{
+			proto.Identity{Scheme: "world", ID: "anyone"},
+		},
 	}
+
+	host, _, err := net.SplitHostPort(netConn.RemoteAddr().String())
+	if err == nil {
+		conn.identities = append(conn.identities, proto.Identity{
+			Scheme: "ip",
+			ID:     host,
+		})
+	} else {
+		log.Printf("Could not parse IP address from connection from %v: %v",
+			netConn.RemoteAddr().String(), err)
+
+	}
+	log.Printf("New connection with identity %v", conn.identities)
 	go conn.handshake()
 }
 

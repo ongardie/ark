@@ -59,7 +59,11 @@ func (defaultLogger) Printf(format string, a ...interface{}) {
 }
 
 type ACL struct {
-	Perms  int32
+	Perms    Permission
+	Identity Identity
+}
+
+type Identity struct {
 	Scheme string
 	ID     string
 }
