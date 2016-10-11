@@ -31,19 +31,21 @@ func identityMatches(ident proto.Identity, pattern proto.Identity) bool {
 }
 
 func checkACL(identities []proto.Identity, perm proto.Permission, acl []proto.ACL) proto.ErrCode {
-	for _, ident := range identities {
-		for _, entry := range acl {
-			if (int32(entry.Perms)&int32(perm)) != 0 && identityMatches(ident, entry.Identity) {
+	for _, entry := range acl {
+		if (int32(entry.Perms) & int32(perm)) == 0 {
+			continue
+		}
+		if identityMatches(proto.Identity{Scheme: "world", ID: "anyone"}, entry.Identity) {
+			return proto.ErrOk
+		}
+		for _, ident := range identities {
+			if identityMatches(ident, entry.Identity) {
 				return proto.ErrOk
 			}
 		}
 	}
 	if len(identities) == 0 {
 		return proto.ErrNoAuth
-	} else if len(identities) == 1 &&
-		(identities[0] == proto.Identity{Scheme: "world", ID: "anyone"}) {
-		return proto.ErrNoAuth
-	} else {
-		return proto.ErrAuthFailed
 	}
+	return proto.ErrAuthFailed
 }

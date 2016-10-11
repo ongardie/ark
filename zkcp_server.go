@@ -85,7 +85,7 @@ type ZKCPConnection struct {
 	sessionId  proto.SessionId
 	connId     statemachine.ConnectionId
 	lastCmdId  statemachine.CommandId
-	identities []proto.Identity
+	identities []proto.Identity // world:anyone is assumed and not stored explicitly
 }
 
 func (conn *ZKCPConnection) String() string {
@@ -313,9 +313,6 @@ func (s *ZKCPServer) newConnection(netConn net.Conn) *ZKCPConnection {
 		netConn:   netConn,
 		sendQueue: NewInfiniteQueue(),
 		closeCh:   make(chan struct{}, 1),
-		identities: []proto.Identity{
-			proto.Identity{Scheme: "world", ID: "anyone"},
-		},
 	}
 
 	host, _, err := net.SplitHostPort(netConn.RemoteAddr().String())
