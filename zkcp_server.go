@@ -1,6 +1,12 @@
+/*
+ * Copyright (c) 2016, salesforce.com, inc.
+ * All rights reserved.
+ */
+
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
 	"log"
 	"net"
@@ -10,6 +16,7 @@ import (
 	"salesforce.com/zoolater/jute"
 	"salesforce.com/zoolater/proto"
 	"salesforce.com/zoolater/statemachine"
+	"salesforce.com/zoolater/x500"
 )
 
 type InfiniteQueue struct {
@@ -124,6 +131,8 @@ func (conn *ZKCPConnection) Notify(zxid proto.ZXID, event statemachine.TreeEvent
 }
 
 func (conn *ZKCPConnection) handshake() {
+	log.Printf("New connection with identity %v", conn.identities)
+
 	// Receive connection request from the client
 	req, err := intframe.Receive(conn.netConn)
 	if err != nil {
@@ -248,27 +257,57 @@ func (conn *ZKCPConnection) sendLoop() {
 	}
 }
 
-func (s *ZKCPServer) Listen(addr string) error {
+func (s *ZKCPServer) listen(addr string, handler func(net.Conn)) error {
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("Error listening on %v: %v", addr, err)
 	}
-	go s.acceptLoop(listener)
+	go func() {
+		for {
+			netConn, err := listener.Accept()
+			if err == nil {
+				go handler(netConn)
+			} else {
+				log.Printf("Error from Accept, ignoring: %v", err)
+			}
+		}
+	}()
 	return nil
 }
 
-func (s *ZKCPServer) acceptLoop(listener net.Listener) {
-	for {
-		conn, err := listener.Accept()
-		if err == nil {
-			s.newConnection(conn)
-		} else {
-			log.Printf("Error from Accept, ignoring: %v", err)
-		}
-	}
+func (s *ZKCPServer) ListenCleartext(addr string) error {
+	return s.listen(addr, func(netConn net.Conn) {
+		conn := s.newConnection(netConn)
+		conn.handshake()
+	})
 }
 
-func (s *ZKCPServer) newConnection(netConn net.Conn) {
+func (s *ZKCPServer) ListenTLS(addr string, config *tls.Config) error {
+	return s.listen(addr, func(netConn net.Conn) {
+		tlsConn := tls.Server(netConn, config)
+		err := tlsConn.Handshake()
+		if err != nil {
+			log.Printf("Error in TLS handshake, closing: %v", err)
+			tlsConn.Close()
+		}
+		conn := s.newConnection(tlsConn)
+		tlsState := tlsConn.ConnectionState()
+		for _, cert := range tlsState.PeerCertificates {
+			id, err := x500.Principal(&cert.Subject)
+			if err != nil {
+				log.Printf("Warning: %v. Skipping", err)
+				continue
+			}
+			conn.identities = append(conn.identities, proto.Identity{
+				Scheme: "x509",
+				ID:     id,
+			})
+		}
+		conn.handshake()
+	})
+}
+
+func (s *ZKCPServer) newConnection(netConn net.Conn) *ZKCPConnection {
 	conn := &ZKCPConnection{
 		server:    s,
 		netConn:   netConn,
@@ -288,10 +327,8 @@ func (s *ZKCPServer) newConnection(netConn net.Conn) {
 	} else {
 		log.Printf("Could not parse IP address from connection from %v: %v",
 			netConn.RemoteAddr().String(), err)
-
 	}
-	log.Printf("New connection with identity %v", conn.identities)
-	go conn.handshake()
+	return conn
 }
 
 func (conn *ZKCPConnection) processConnReq(reqBuf []byte) error {

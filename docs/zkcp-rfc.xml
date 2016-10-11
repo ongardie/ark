@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="US-ASCII"?>
 <!DOCTYPE rfc SYSTEM "rfc2629.dtd" [
 <!ENTITY RFC2119 SYSTEM "http://xml.resource.org/public/rfc/bibxml/reference.RFC.2119.xml">
+<!ENTITY RFC2253 SYSTEM "http://xml.resource.org/public/rfc/bibxml/reference.RFC.2253.xml">
 <!ENTITY RFC3552 SYSTEM "http://xml.resource.org/public/rfc/bibxml/reference.RFC.3552.xml">
 <!ENTITY RFC4422 SYSTEM "http://xml.resource.org/public/rfc/bibxml/reference.RFC.4422.xml">
 <!ENTITY RFC5226 SYSTEM "http://xml.resource.org/public/rfc/bibxml/reference.RFC.5226.xml">
@@ -62,7 +63,7 @@
         <t>The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
           "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
           document are to be interpreted as described in <xref
-          target="RFC2119">RFC 2119</xref>.</t>
+          target="RFC2119" />.</t>
         </section>
       </section>
 
@@ -174,7 +175,7 @@
           </section>
 
           <section title="Scheme: x509">
-            <t>Servers MAY support an "x509" scheme, which uses the client's X500 Principal as its id.</t>
+            <t>Servers MAY support an "x509" scheme, which uses the X.509 subject of the child's certificate. A string representation of the X.500 distinguished name is used as the client's id, using the format defined in <xref target="RFC2253" />.</t>
 
             <t>Servers SHOULD automatically grant clients this identity when it is available (clients SHOULD NOT need to request it explicitly).</t>
           </section>
@@ -796,7 +797,7 @@
 
     <section anchor="Security" title="Security Considerations">
       <t>All drafts are required to have a security considerations section.
-        See <xref target="RFC3552">RFC 3552</xref> for a guide.</t>
+        See <xref target="RFC3552" /> for a guide.</t>
       </section>
     </middle>
 
@@ -804,6 +805,8 @@
 
       <references title="Normative References">
         &RFC2119;
+
+        &RFC2253;
 
         &RFC4422;
 

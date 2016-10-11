@@ -7,6 +7,7 @@ package main
 
 import (
 	cryptoRand "crypto/rand"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
@@ -25,13 +26,17 @@ import (
 
 type Server struct {
 	options struct {
-		bootstrap         bool
-		serverId          uint64
-		storeDir          string
-		peerAddress       string
-		clientAddress     string
-		adminAddress      string
-		heartbeatInterval time.Duration
+		bootstrap              bool
+		serverId               uint64
+		storeDir               string
+		peerAddress            string
+		cleartextClientAddress string
+		tlsClientAddress       string
+		certFile               string
+		keyFile                string
+		requireTLSClientCert   bool
+		adminAddress           string
+		heartbeatInterval      time.Duration
 	}
 	stateMachine *statemachine.StateMachine
 	raft         struct {
@@ -302,11 +307,35 @@ type addVoterRequest struct {
 func (s *Server) serve() error {
 	go func() { log.Fatal(s.adminServer.ListenAndServe()) }()
 
-	log.Printf("listening for ZooKeeper clients on %v", s.options.clientAddress)
 	zkcpServer := &ZKCPServer{handler: s.zkcpHandler}
-	err := zkcpServer.Listen(s.options.clientAddress)
-	if err != nil {
-		return fmt.Errorf("error listening: %v", err)
+
+	if s.options.cleartextClientAddress != "" {
+		log.Printf("listening for ZooKeeper clients in cleartext on %v",
+			s.options.cleartextClientAddress)
+		err := zkcpServer.ListenCleartext(s.options.cleartextClientAddress)
+		if err != nil {
+			return fmt.Errorf("error listening: %v", err)
+		}
+	}
+
+	if s.options.tlsClientAddress != "" {
+		log.Printf("listening for ZooKeeper clients using TLS on %v",
+			s.options.tlsClientAddress)
+		cert, err := tls.LoadX509KeyPair(s.options.certFile, s.options.keyFile)
+		if err != nil {
+			return fmt.Errorf("error loading X509 keypair: %v", err)
+		}
+		clientAuth := tls.RequestClientCert
+		if s.options.requireTLSClientCert {
+			clientAuth = tls.RequireAndVerifyClientCert
+		}
+		err = zkcpServer.ListenTLS(s.options.tlsClientAddress, &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			ClientAuth:   clientAuth,
+		})
+		if err != nil {
+			return fmt.Errorf("error listening: %v", err)
+		}
 	}
 
 	select {} // block forever
@@ -397,14 +426,22 @@ func main() {
 		"initialize a new cluster containing just this server and immediately exit")
 	flags.Uint64Var(&s.options.serverId, "id", 0,
 		"local Server ID (must be unique across Raft cluster; required)")
-	flags.StringVar(&s.options.peerAddress, "peeraddr", "",
-		"local address given to other servers (required)")
-	flags.StringVar(&s.options.clientAddress, "clientaddr", "0.0.0.0:2181",
-		"local address on which to listen for client requests")
-	flags.StringVar(&s.options.adminAddress, "adminaddr", "0.0.0.0:2182",
-		"local address on which to listen for management requests")
+	flags.StringVar(&s.options.peerAddress, "peer-address", "",
+		"local `address` given to other servers (required)")
+	flags.StringVar(&s.options.cleartextClientAddress, "cleartext-client-address", "",
+		"local `address` on which to listen for client requests over cleartext TCP")
+	flags.StringVar(&s.options.tlsClientAddress, "tls-client-address", "0.0.0.0:2281",
+		"local `address` on which to listen for client requests over TLS")
+	flags.StringVar(&s.options.certFile, "cert", "cert.crt",
+		"X509 certificate `file` for serving clients over TLS")
+	flags.StringVar(&s.options.keyFile, "key", "key.key",
+		"X509 key `file` for serving clients over TLS")
+	flags.BoolVar(&s.options.requireTLSClientCert, "require-tls-client-cert", false,
+		"require TLS clients to present a valid certificate")
+	flags.StringVar(&s.options.adminAddress, "admin-address", "0.0.0.0:2182",
+		"local `address` on which to listen for management requests")
 	flags.StringVar(&s.options.storeDir, "store", "store",
-		"directory to store Raft log and snapshots")
+		"`directory` to store Raft log and snapshots")
 	flags.Parse(os.Args[1:])
 
 	if s.options.serverId == 0 {
@@ -413,7 +450,7 @@ func main() {
 		os.Exit(2)
 	}
 	if s.options.peerAddress == "" {
-		log.Printf("Error: -peeraddr is required")
+		log.Printf("Error: -peer-address is required")
 		flags.PrintDefaults()
 		os.Exit(2)
 	}

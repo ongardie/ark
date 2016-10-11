@@ -1,1 +1,4 @@
+*.crt
+*.key
+/logs/
 /store/
