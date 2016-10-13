@@ -58,24 +58,60 @@ const (
 )
 
 const (
-	OpNotify       OpCode = 0
-	OpCreate              = 1
-	OpDelete              = 2
-	OpExists              = 3
-	OpGetData             = 4
-	OpSetData             = 5
-	OpGetAcl              = 6
-	OpSetAcl              = 7
-	OpGetChildren         = 8
-	OpSync                = 9
-	OpPing                = 11
-	OpGetChildren2        = 12
-	OpCheck               = 13
-	OpMulti               = 14
-	OpClose               = -11
-	OpSetAuth             = 100
-	OpSetWatches          = 101
-	OpError               = -1
+	OpNotify          OpCode = 0
+	OpCreate                 = 1
+	OpDelete                 = 2
+	OpExists                 = 3
+	OpGetData                = 4
+	OpSetData                = 5
+	OpGetAcl                 = 6
+	OpSetAcl                 = 7
+	OpGetChildren            = 8
+	OpSync                   = 9
+	OpPing                   = 11
+	OpGetChildren2           = 12
+	OpCheck                  = 13
+	OpMulti                  = 14
+	OpCreate2                = 15
+	OpReconfig               = 16
+	OpCheckWatches           = 17
+	OpRemoveWatches          = 18
+	OpCreateContainer        = 19
+	OpDeleteContainer        = 20
+	OpCreateTTL              = 21
+	OpClose                  = -11
+	OpSetAuth                = 100
+	OpSetWatches             = 101
+	OpError                  = -1
+)
+
+var (
+	OpNames = map[OpCode]string{
+		OpNotify:          "notify",
+		OpCreate:          "create",
+		OpDelete:          "delete",
+		OpExists:          "exists",
+		OpGetData:         "getData",
+		OpSetData:         "setData",
+		OpGetAcl:          "getACL",
+		OpSetAcl:          "setACL",
+		OpGetChildren:     "getChildren",
+		OpSync:            "sync",
+		OpPing:            "ping",
+		OpGetChildren2:    "getChildren2",
+		OpCheck:           "check",
+		OpMulti:           "multi",
+		OpCreate2:         "create2",
+		OpReconfig:        "reconfig",
+		OpCheckWatches:    "checkWatches",
+		OpRemoveWatches:   "removeWatches",
+		OpCreateContainer: "createContainer",
+		OpDeleteContainer: "deleteContainer",
+		OpCreateTTL:       "createTTL",
+		OpClose:           "close",
+		OpSetAuth:         "setAuth",
+		OpSetWatches:      "setWatches",
+	}
 )
 
 const (
@@ -109,6 +145,8 @@ const (
 	StateSaslAuthenticated State = 6
 	StateExpired           State = -112
 )
+
+type CreateMode int32
 
 const (
 	ModeDefault             CreateMode = ModePersistent
@@ -230,25 +268,6 @@ const (
 
 var (
 	emptyPassword = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-	OpNames       = map[OpCode]string{
-		OpNotify:       "notify",
-		OpCreate:       "create",
-		OpDelete:       "delete",
-		OpExists:       "exists",
-		OpGetData:      "getData",
-		OpSetData:      "setData",
-		OpGetAcl:       "getACL",
-		OpSetAcl:       "setACL",
-		OpGetChildren:  "getChildren",
-		OpSync:         "sync",
-		OpPing:         "ping",
-		OpGetChildren2: "getChildren2",
-		OpCheck:        "check",
-		OpMulti:        "multi",
-		OpClose:        "close",
-		OpSetAuth:      "setAuth",
-		OpSetWatches:   "setWatches",
-	}
 )
 
 type EventType int32

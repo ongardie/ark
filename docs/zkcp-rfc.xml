@@ -512,26 +512,56 @@
 
 
         <section anchor="create-request" title="Create">
-          <figure>
-            <artwork><![CDATA[
-  struct CreateRequest {
+          <section title="Create v1">
+            <figure>
+              <artwork><![CDATA[
+  struct CreateRequestV1 {
     ustring path
     byte[]  data
     ACL[]   acl
     int     flags
   }
-            ]]></artwork>
-          </figure>
+              ]]></artwork>
+            </figure>
 
-          <figure>
-            <artwork><![CDATA[
-  struct CreateResponse {
+            <figure>
+              <artwork><![CDATA[
+  struct CreateResponseV1 {
     ustring path
   }
-            ]]></artwork>
-          </figure>
+              ]]></artwork>
+            </figure>
+          </section>
 
-          <t>Create may fail with -114 (invalid ACL specified).</t>
+          <section title="Create v2">
+            <figure>
+              <artwork><![CDATA[
+  struct CreateRequestV2 {
+    ustring path
+    byte[]  data
+    ACL[]   acl
+    int     flags
+  }
+              ]]></artwork>
+            </figure>
+
+            <figure>
+              <artwork><![CDATA[
+  struct CreateResponseV2 {
+    ustring path
+    Stat    stat
+  }
+              ]]></artwork>
+            </figure>
+          </section>
+
+          <section title="Create Container">
+            <t>This uses the same format as Create v2 but with flags set to 4.</t>
+
+            <t>If a container znode has ever had children but has not had children for the last minute, the servers SHOULD delete the container and issue notifications on that removal.</t>
+
+            <t>Can a container znode have data? Can create or create2 be used to create containers?</t>
+          </section>
         </section>
 
         <section anchor="delete-request" title="Delete">

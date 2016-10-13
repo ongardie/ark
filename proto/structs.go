@@ -46,7 +46,6 @@ type Component string
 type ZXID int64
 type SessionId int64
 type SessionPassword []byte // 16 bytes
-type CreateMode int32
 
 const SessionPasswordLen = 16
 
@@ -208,6 +207,14 @@ type CreateRequest struct {
 }
 
 type CreateResponse pathResponse
+
+type Create2Request CreateRequest
+
+type Create2Response struct {
+	Path Path
+	Stat Stat
+}
+
 type DeleteRequest PathVersionRequest
 type DeleteResponse struct{}
 
@@ -326,6 +333,8 @@ func RequestStructForOp(op OpCode) interface{} {
 		return &CloseRequest{}
 	case OpCreate:
 		return &CreateRequest{}
+	case OpCreate2, OpCreateContainer:
+		return &Create2Request{}
 	case OpDelete:
 		return &DeleteRequest{}
 	case OpExists:
@@ -362,6 +371,8 @@ func ResponseStructForOp(op OpCode) interface{} {
 		return &CloseResponse{}
 	case OpCreate:
 		return &CreateResponse{}
+	case OpCreate2, OpCreateContainer:
+		return &Create2Response{}
 	case OpDelete:
 		return &DeleteResponse{}
 	case OpExists:
