@@ -309,6 +309,29 @@
 
           <t>The servers SHOULD expire a client's session if they have not received any requests from that client after the duration of its session timeout. They MAY grant the client additional grace period(s) beyond the client's session tiemout.</t>
         </section>
+
+        <section anchor="ping-request" title="Ping">
+          <t>A client SHOULD issue Ping requests during periods of inactivity to maintain its session (see <xref target="expiration" />).</t>
+
+          <t>Ping requests and responses are formatted just like normal requests and resposnes (<xref target="requests" />) except that they SHOULD use xid -2. TODO: or is this a MUST?</t>
+
+          <t>PingRequest and PingResponse are both empty, thus serializing as zero bytes with Jute encoding (<xref target="jute" />).</t>
+
+          <figure>
+            <artwork><![CDATA[
+  struct PingRequest {
+  }
+            ]]></artwork>
+          </figure>
+
+          <figure>
+            <artwork><![CDATA[
+  struct PingResponse {
+  }
+            ]]></artwork>
+          </figure>
+        </section>
+
       </section>
 
       <section anchor="requests" title="Requests">
@@ -388,26 +411,6 @@
         </texttable>
 
         <t>Additionally, individual requests may fail for other reasons defined in the following subsections.</t>
-
-        <section anchor="ping-request" title="Ping">
-          <t>A client MUST issue Ping requests during periods of inactivity to maintain its session (see <xref target="expiration" />).</t>
-
-          <t>PingRequest and PingResponse are both empty, thus serializing as zero bytes with Jute encoding (<xref target="jute" />).</t>
-
-          <figure>
-            <artwork><![CDATA[
-  struct PingRequest {
-  }
-            ]]></artwork>
-          </figure>
-
-          <figure>
-            <artwork><![CDATA[
-  struct PingResponse {
-  }
-            ]]></artwork>
-          </figure>
-        </section>
 
         <section anchor="exists-request" title="Exists">
           <figure>
