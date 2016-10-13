@@ -14,10 +14,27 @@ func (t *Tree) GetChildren(ctx *context, req *proto.GetChildrenRequest) (*proto.
 	}
 	resp2, register, err := t.GetChildren2(ctx, req2)
 	if err != proto.ErrOk {
-		return nil, nil, err
+		return nil, register, err
 	}
 	resp := &proto.GetChildrenResponse{
 		Children: resp2.Children,
 	}
 	return resp, register, proto.ErrOk
+}
+
+func (t *Tree) Create(ctx *context, req *proto.CreateRequest) (*Tree, *proto.CreateResponse, NotifyEvents, proto.ErrCode) {
+	req2 := &proto.Create2Request{
+		Path: req.Path,
+		Data: req.Data,
+		Acl:  req.Acl,
+		Mode: req.Mode,
+	}
+	tree, resp2, notify, err := t.Create2(ctx, req2)
+	if err != proto.ErrOk {
+		return nil, nil, notify, err
+	}
+	resp := &proto.CreateResponse{
+		Path: resp2.Path,
+	}
+	return tree, resp, notify, err
 }

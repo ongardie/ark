@@ -119,9 +119,9 @@ func (t *Tree) CloseSession(ctx *context, req *proto.CloseRequest) (*Tree, *prot
 	return root, &proto.CloseResponse{}, notify, proto.ErrOk
 }
 
-func (t *Tree) Create(ctx *context, req *proto.CreateRequest) (*Tree, *proto.CreateResponse, NotifyEvents, proto.ErrCode) {
+func (t *Tree) Create2(ctx *context, req *proto.Create2Request) (*Tree, *proto.Create2Response, NotifyEvents, proto.ErrCode) {
 	var notify NotifyEvents
-	resp := &proto.CreateResponse{}
+	resp := &proto.Create2Response{}
 	components := splitPath(req.Path)
 	if len(components) == 0 {
 		return nil, nil, nil, proto.ErrNodeExists
@@ -164,6 +164,7 @@ func (t *Tree) Create(ctx *context, req *proto.CreateRequest) (*Tree, *proto.Cre
 			if req.Mode == proto.ModeEphemeral || req.Mode == proto.ModeEphemeralSequential {
 				child.stat.EphemeralOwner = ctx.sessionId
 			}
+			resp.Stat = child.stat
 			node = node.withChild(name, child)
 			node.stat.Pzxid = ctx.zxid
 			node.stat.Cversion += 1 // TODO: overflow?
