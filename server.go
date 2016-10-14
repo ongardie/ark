@@ -389,7 +389,7 @@ func (s *Server) expireSessions() {
 		log.Printf("expire: %+v", expire)
 
 		header := statemachine.CommandHeader1{
-			CmdType:   statemachine.ExpireCommand,
+			CmdType:   statemachine.ExpireSessionsCommand,
 			Server:    s.options.serverId,
 			SessionId: 0,
 			ConnId:    0,
@@ -414,6 +414,44 @@ func (s *Server) expireSessions() {
 		case err := <-errCh:
 			log.Printf("Failed to commit expire command: %v", err)
 		default:
+		}
+	}
+}
+func (s *Server) expireContainers() {
+	const tick = 10 * time.Second
+	raft := s.raft.handle
+	for {
+		time.Sleep(tick)
+		if !isLeader(raft) {
+			continue
+		}
+		expire := s.stateMachine.ExpiredContainers()
+		if expire == nil {
+			continue
+		}
+		log.Printf("expire containers: %+v", expire)
+
+		header := statemachine.CommandHeader1{
+			CmdType:   statemachine.ExpireContainersCommand,
+			Server:    s.options.serverId,
+			SessionId: 0,
+			ConnId:    0,
+			CmdId:     0,
+			Time:      time.Now().Unix(),
+			Rand:      getRand(proto.SessionPasswordLen),
+		}
+		headerBuf, err := jute.Encode(&header)
+		if err != nil {
+			log.Fatalf("Failed to encode expire containers log entry header: %v", err)
+		}
+		cmdBuf, err := jute.Encode(expire)
+		if err != nil {
+			log.Fatalf("Failed to encode expire containers list: %v", err)
+		}
+		buf := append(append([]byte{1}, headerBuf...), cmdBuf...)
+		err = raft.Apply(buf, 0).Error()
+		if err != nil {
+			log.Printf("Failed to commit expire containers command: %v", err)
 		}
 	}
 }
@@ -484,6 +522,7 @@ func main() {
 		s.options.serverId, HEARTBEAT_INTERVAL)
 
 	go s.expireSessions()
+	go s.expireContainers()
 
 	s.adminServer = newAdminServer(s)
 

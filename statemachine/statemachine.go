@@ -30,6 +30,13 @@ type StateMachine struct {
 	output            map[fullCommandId]CommandResultFn
 	connectOutput     map[string]ConnectResultFn
 	minSessionTimeout time.Duration
+	emptyContainers   map[proto.Path]emptyContainer
+}
+
+type emptyContainer struct {
+	start time.Time
+	czxid proto.ZXID
+	pzxid proto.ZXID
 }
 
 type fullCommandId struct {
@@ -64,10 +71,11 @@ type context struct {
 type CommandType int32
 
 const (
-	NoOpCommand    CommandType = 0
-	NormalCommand              = 1
-	ConnectCommand             = 2
-	ExpireCommand              = 3
+	NoOpCommand             CommandType = 0
+	NormalCommand                       = 1
+	ConnectCommand                      = 2
+	ExpireSessionsCommand               = 3
+	ExpireContainersCommand             = 4
 )
 
 // This is preceded by a 1-byte version number set to 1.
@@ -82,13 +90,22 @@ type CommandHeader1 struct {
 	Identity  []proto.Identity
 }
 
-type ExpireRequest struct {
+type ExpireSessionsRequest struct {
 	Term     uint64
-	Sessions []ExpireEntry
+	Sessions []ExpireSessionsEntry
 }
-type ExpireEntry struct {
+type ExpireSessionsEntry struct {
 	Session  proto.SessionId
 	LastConn ConnectionId
+}
+
+type ExpireContainersRequest struct {
+	Containers []ExpireContainersEntry
+}
+type ExpireContainersEntry struct {
+	Path  proto.Path
+	Czxid proto.ZXID
+	Pzxid proto.ZXID
 }
 
 type TreeEvent struct {
@@ -130,6 +147,7 @@ func NewStateMachine(serverId uint64, minSessionTimeout time.Duration) *StateMac
 		output:            make(map[fullCommandId]CommandResultFn),
 		connectOutput:     make(map[string]ConnectResultFn),
 		minSessionTimeout: minSessionTimeout,
+		emptyContainers:   make(map[proto.Path]emptyContainer),
 	}
 }
 
@@ -157,10 +175,10 @@ func (sm *StateMachine) Elapsed(
 	lastLeaderContact time.Time,
 	leader bool,
 	stableSince time.Time,
-	serverContact func(uint64) time.Time) *ExpireRequest {
+	serverContact func(uint64) time.Time) *ExpireSessionsRequest {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
-	expire := &ExpireRequest{Term: term}
+	expire := &ExpireSessionsRequest{Term: term}
 	for sessionId, session := range sm.sessions {
 		hasExpired := false
 		if now.Sub(session.lastContact) > session.timeout {
@@ -176,11 +194,39 @@ func (sm *StateMachine) Elapsed(
 			if hasExpired {
 				log.Printf("Session %v is out of time", sessionId)
 				expire.Sessions = append(expire.Sessions,
-					ExpireEntry{Session: sessionId, LastConn: session.connId})
+					ExpireSessionsEntry{Session: sessionId, LastConn: session.connId})
 			}
 		}
 	}
 	if len(expire.Sessions) > 0 {
+		return expire
+	} else {
+		return nil
+	}
+}
+
+func (sm *StateMachine) ExpiredContainers() *ExpireContainersRequest {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+	expire := &ExpireContainersRequest{}
+	now := time.Now()
+	for path, container := range sm.emptyContainers {
+		if now.After(container.start.Add(time.Minute)) {
+			empty, czxid, pzxid := sm.tree.IsEmptyContainer(path)
+			if empty {
+				if czxid == container.czxid && pzxid == container.pzxid {
+					expire.Containers = append(expire.Containers, ExpireContainersEntry{
+						Path:  path,
+						Czxid: container.czxid,
+						Pzxid: container.pzxid,
+					})
+				}
+			} else {
+				delete(sm.emptyContainers, path)
+			}
+		}
+	}
+	if len(expire.Containers) > 0 {
 		return expire
 	} else {
 		return nil
@@ -194,6 +240,19 @@ func (sm *StateMachine) notifyWatch(zxid proto.ZXID, event TreeEvent) {
 		conn.Notify(zxid, event)
 	}
 	delete(sm.watches, event)
+
+	// Check if the last child of a container node got removed.
+	if event.Which == proto.EventNodeChildrenChanged {
+		empty, czxid, pzxid := sm.tree.IsEmptyContainer(event.Path)
+		if empty {
+			log.Printf("Container %v is now empty", event.Path)
+			sm.emptyContainers[event.Path] = emptyContainer{
+				start: time.Now(),
+				czxid: czxid,
+				pzxid: pzxid,
+			}
+		}
+	}
 }
 
 func (sm *StateMachine) notifyWatches(zxid proto.ZXID, events NotifyEvents) {
@@ -274,8 +333,8 @@ func (sm *StateMachine) applyConnect(ctx *context, cmdBuf []byte, resultFn Conne
 	resultFn(resp, session.connId, proto.ErrOk)
 }
 
-func (sm *StateMachine) applyExpire(ctx *context, cmdBuf []byte) {
-	req := ExpireRequest{}
+func (sm *StateMachine) applyExpireSession(ctx *context, cmdBuf []byte) {
+	req := ExpireSessionsRequest{}
 	err := jute.Decode(cmdBuf, &req)
 	if err != nil {
 		log.Printf("Error decoding expire list: %v", err)
@@ -295,6 +354,24 @@ func (sm *StateMachine) applyExpire(ctx *context, cmdBuf []byte) {
 		}
 		delete(sm.sessions, expire.Session)
 		tree, notify := sm.tree.ExpireSession(ctx.zxid, expire.Session)
+		sm.tree = tree
+		sm.notifyWatches(ctx.zxid, notify)
+	}
+}
+
+func (sm *StateMachine) applyExpireContainer(ctx *context, cmdBuf []byte) {
+	req := ExpireContainersRequest{}
+	err := jute.Decode(cmdBuf, &req)
+	if err != nil {
+		log.Printf("Error decoding expire list: %v", err)
+		return
+	}
+	for _, expire := range req.Containers {
+		container, ok := sm.emptyContainers[expire.Path]
+		if ok && container.pzxid <= expire.Pzxid {
+			delete(sm.emptyContainers, expire.Path)
+		}
+		tree, notify := sm.tree.ExpireContainer(ctx.zxid, expire.Path, expire.Czxid, expire.Pzxid)
 		sm.tree = tree
 		sm.notifyWatches(ctx.zxid, notify)
 	}
@@ -450,10 +527,12 @@ func (sm *StateMachine) Apply(entry *raft.Log) (unused interface{}) {
 		sm.applyConnect(ctx, cmdBuf, resultFn)
 		return
 
-	case ExpireCommand:
-		sm.applyExpire(ctx, cmdBuf)
+	case ExpireSessionsCommand:
+		sm.applyExpireSession(ctx, cmdBuf)
 		return
-
+	case ExpireContainersCommand:
+		sm.applyExpireContainer(ctx, cmdBuf)
+		return
 	case NoOpCommand:
 		break
 	case NormalCommand:

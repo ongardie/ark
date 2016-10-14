@@ -14,10 +14,11 @@ import (
 )
 
 type Tree struct {
-	data     []byte
-	acl      []proto.ACL
-	stat     proto.Stat
-	children map[proto.Component]*Tree
+	data      []byte
+	acl       []proto.ACL
+	stat      proto.Stat
+	container bool
+	children  map[proto.Component]*Tree
 }
 
 func NewTree() *Tree {
@@ -84,6 +85,51 @@ func (t *Tree) lookup(path proto.Path) *Tree {
 		}
 	}
 	return node
+}
+
+func (t *Tree) IsEmptyContainer(path proto.Path) (empty bool, czxid proto.ZXID, pzxid proto.ZXID) {
+	node := t.lookup(path)
+	if node == nil || !node.container || len(node.children) > 0 || node.stat.Pzxid == 0 {
+		return false, 0, 0
+	}
+	return true, node.stat.Czxid, node.stat.Pzxid
+}
+
+func (t *Tree) ExpireContainer(zxid proto.ZXID, path proto.Path, ifCzxid proto.ZXID, ifPzxid proto.ZXID) (*Tree, NotifyEvents) {
+	var notify NotifyEvents
+
+	components := splitPath(path)
+	if len(components) == 0 {
+		return t, notify
+	}
+	allComponents := components
+
+	var do func(node *Tree, components []proto.Component) *Tree
+	do = func(node *Tree, components []proto.Component) *Tree {
+		if len(components) == 1 {
+			target, ok := node.children[components[0]]
+			if !ok || target.stat.Czxid != ifCzxid || target.stat.Pzxid != ifPzxid {
+				return node
+			}
+			notify = append(notify,
+				TreeEvent{path, proto.EventNodeDeleted},
+				TreeEvent{joinPath(allComponents[:len(allComponents)-1]), proto.EventNodeChildrenChanged})
+			node = node.withoutChild(components[0])
+			node.stat.Pzxid = zxid
+			node.stat.Cversion += 1 // TODO: overflow?
+			node.stat.NumChildren--
+			return node
+		} else {
+			child, ok := node.children[components[0]]
+			if !ok {
+				return node
+			}
+			newChild := do(child, components[1:])
+			return node.withChild(components[0], newChild)
+		}
+	}
+
+	return do(t, components), notify
 }
 
 // TODO: O(n) probably isn't ok
@@ -160,6 +206,7 @@ func (t *Tree) Create2(ctx *context, req *proto.Create2Request) (*Tree, *proto.C
 					Czxid: ctx.zxid,
 					Ctime: ctx.time,
 				},
+				container: req.Mode == proto.ModeContainer,
 			}
 			if req.Mode == proto.ModeEphemeral || req.Mode == proto.ModeEphemeralSequential {
 				child.stat.EphemeralOwner = ctx.sessionId
@@ -189,14 +236,11 @@ func (t *Tree) Create2(ctx *context, req *proto.Create2Request) (*Tree, *proto.C
 
 	switch req.Mode {
 	case proto.ModePersistent:
-		break
 	case proto.ModeEphemeral:
-		break
 	case proto.ModeSequential:
-		break
 	case proto.ModeEphemeralSequential:
-		break
-		// case proto.ModeContainer: TODO
+	case proto.ModeContainer:
+		// ok (Go won't fall through)
 	default:
 		return nil, nil, nil, proto.ErrAPIError
 	}
@@ -210,6 +254,13 @@ func (t *Tree) Create2(ctx *context, req *proto.Create2Request) (*Tree, *proto.C
 
 func (t *Tree) Delete(ctx *context, req *proto.DeleteRequest) (*Tree, *proto.DeleteResponse, NotifyEvents, proto.ErrCode) {
 	var notify NotifyEvents
+
+	components := splitPath(req.Path)
+	if len(components) == 0 {
+		return nil, nil, nil, proto.ErrBadArguments
+	}
+	allComponents := components
+
 	var do func(node *Tree, components []proto.Component) (*Tree, proto.ErrCode)
 	do = func(node *Tree, components []proto.Component) (*Tree, proto.ErrCode) {
 		if len(components) == 1 {
@@ -229,7 +280,7 @@ func (t *Tree) Delete(ctx *context, req *proto.DeleteRequest) (*Tree, *proto.Del
 			}
 			notify = append(notify,
 				TreeEvent{req.Path, proto.EventNodeDeleted},
-				TreeEvent{joinPath(components[:len(components)-1]), proto.EventNodeChildrenChanged})
+				TreeEvent{joinPath(allComponents[:len(allComponents)-1]), proto.EventNodeChildrenChanged})
 			node = node.withoutChild(components[0])
 			node.stat.Pzxid = ctx.zxid
 			node.stat.Cversion += 1 // TODO: overflow?
@@ -248,10 +299,6 @@ func (t *Tree) Delete(ctx *context, req *proto.DeleteRequest) (*Tree, *proto.Del
 		}
 	}
 
-	components := splitPath(req.Path)
-	if len(components) == 0 {
-		return nil, nil, nil, proto.ErrBadArguments
-	}
 	root, err := do(t, components)
 	if err != proto.ErrOk {
 		return nil, nil, nil, err
