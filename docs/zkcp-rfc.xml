@@ -49,13 +49,13 @@
 
   <middle>
     <section title="Introduction">
-      <t>ZooKeeper stores coordination data on a group of servers for clients to access. Clients access and modify the data by connecting to any server in the group and issuing requests.</t>
+      <t>ZooKeeper stores coordination data on a group of servers for clients to access. This data takes the form of a hierarchical key-value store, as described in <xref target="data-model" />. Clients access and modify the data by connecting to any server in the group and issuing requests.</t>
 
-      <t>ZooKeeper clients typically access ZooKeeper servers using a client library, such as the Java or C clients included in Apache ZooKepeer or an "unofficial" client library. While several unofficial client libraries exist, the protocol they use has not been documented precisely until now. This document aims to document the existing protocol to promote interoperability across client library and server implementations.</t>
+      <t>ZooKeeper clients typically access ZooKeeper servers using a client library, such as the Java or C clients included in Apache ZooKepeer or an "unofficial" client library. While several unofficial client libraries exist, the protocol they use has not been documented precisely until now. This RFC aims to document the existing protocol to promote interoperability across client and server implementations.</t>
 
-      <t>ZooKeeper clients and servers exchange discrete <spanx>packets</spanx> over <xref target="RFC7414">TCP</xref> connections. They frame each packet by prepending the length of the packet, as described in <xref target="framing" />.</t>
+      <t>ZooKeeper clients and servers exchange discrete <spanx>packets</spanx> over <xref target="RFC7414">TCP</xref> connections. They frame each packet by prepending the length of the packet, as described in <xref target="framing" />. The contents of each packet are encoded using a format called Jute, as described in <xref target="jute" />.</t>
 
-      <t>The contents of each packet are encoded using a format called Jute, as described in <xref target="jute" />.</t>
+      <t>ZooKeeper clients initiate and maintain sessions with the servers, as described in <xref target="sessions" />. Within a valid session, they may send various requests, described in <xref target="requests" />, to query and modify the ZooKepeer data. They may also receive notifications from servers about changes in the data, as described in <xref target="notifications" />.</t>
 
       <section title="Conventions">
         <t>The terminology used in Apache ZooKeeper is preferred.</t>
@@ -64,10 +64,12 @@
           "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
           document are to be interpreted as described in <xref
           target="RFC2119" />.</t>
+
+        <t>This RFC attempts to document an existing protocol, so whether implementations "SHOULD" or "MUST" behave particular ways is a matter of opinion in many cases. This RFC aims to use "MUST" or similar terms where differing behavior could possibly cause existing releases of Apache ZooKeeper or reasonable clients to misbehave, and it conservatively uses "SHOULD" or similar terms otherwise.</t>
         </section>
       </section>
 
-      <section title="Data Model">
+      <section anchor="data-model" title="Data Model">
         <t>The servers maintain a tree data structure, where each node in the tree is called a znode. A znode can store a byte array of uninterpreted data, it can have named child znodes, or both.</t>
 
         <section title="Znode Stats">
