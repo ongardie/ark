@@ -71,7 +71,7 @@ func (s *Server) processConnect(rpc *ConnectRPC) {
 		SessionId: 0,
 		ConnId:    0,
 		CmdId:     1,
-		Time:      time.Now().Unix(),
+		Time:      proto.Time(time.Now().UnixNano() / 1e6),
 		Rand:      getRand(proto.SessionPasswordLen),
 		Identity:  rpc.conn.Identity(),
 	}
@@ -114,7 +114,7 @@ func (s *Server) processCommand(rpc *RPC) {
 		SessionId: rpc.conn.SessionId(),
 		ConnId:    rpc.conn.ConnId(),
 		CmdId:     rpc.cmdId,
-		Time:      time.Now().Unix(),
+		Time:      proto.Time(time.Now().UnixNano() / 1e6),
 		Rand:      getRand(proto.SessionPasswordLen),
 		Identity:  rpc.conn.Identity(),
 	}
@@ -204,7 +204,7 @@ func isReadOnly(opCode proto.OpCode) bool {
 	switch opCode {
 	case proto.OpExists:
 		return true
-	case proto.OpGetAcl:
+	case proto.OpGetACL:
 		return true
 	case proto.OpGetChildren:
 		return true
@@ -394,7 +394,7 @@ func (s *Server) expireSessions() {
 			SessionId: 0,
 			ConnId:    0,
 			CmdId:     0,
-			Time:      time.Now().Unix(),
+			Time:      proto.Time(time.Now().UnixNano() / 1e6),
 			Rand:      getRand(proto.SessionPasswordLen),
 		}
 		headerBuf, err := jute.Encode(&header)
@@ -437,7 +437,7 @@ func (s *Server) expireContainers() {
 			SessionId: 0,
 			ConnId:    0,
 			CmdId:     0,
-			Time:      time.Now().Unix(),
+			Time:      proto.Time(time.Now().UnixNano() / 1e6),
 			Rand:      getRand(proto.SessionPasswordLen),
 		}
 		headerBuf, err := jute.Encode(&header)

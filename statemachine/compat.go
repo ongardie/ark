@@ -26,7 +26,7 @@ func (t *Tree) Create(ctx *context, req *proto.CreateRequest) (*Tree, *proto.Cre
 	req2 := &proto.Create2Request{
 		Path: req.Path,
 		Data: req.Data,
-		Acl:  req.Acl,
+		ACL:  req.ACL,
 		Mode: req.Mode,
 	}
 	tree, resp2, notify, err := t.Create2(ctx, req2)

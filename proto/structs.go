@@ -46,6 +46,8 @@ type Component string
 type ZXID int64
 type SessionId int64
 type SessionPassword []byte // 16 bytes
+type Version int32
+type Time int64 // milliseconds form Unix epoch
 
 const SessionPasswordLen = 16
 
@@ -70,11 +72,11 @@ type Identity struct {
 type Stat struct {
 	Czxid          ZXID      // The zxid of the change that caused this znode to be created.
 	Mzxid          ZXID      // The zxid of the change that last modified this znode.
-	Ctime          int64     // The time in milliseconds from epoch when this znode was created.
-	Mtime          int64     // The time in milliseconds from epoch when this znode was last modified.
-	Version        int32     // The number of changes to the data of this znode.
-	Cversion       int32     // The number of changes to the children of this znode.
-	Aversion       int32     // The number of changes to the ACL of this znode.
+	Ctime          Time      // When this znode was created.
+	Mtime          Time      // When this znode was last modified.
+	Version        Version   // The number of changes to the data of this znode.
+	Cversion       Version   // The number of changes to the children of this znode.
+	Aversion       Version   // The number of changes to the ACL of this znode.
 	EphemeralOwner SessionId // The session id of the owner of this znode if the znode is an ephemeral node. If it is not an ephemeral node, it will be zero.
 	DataLength     int32     // The length of the data field of this znode.
 	NumChildren    int32     // The number of children of this znode.
@@ -130,12 +132,12 @@ type ServerStats struct {
 }
 
 type RequestHeader struct {
-	Xid    int32
+	Xid    Xid
 	OpCode OpCode
 }
 
 type ResponseHeader struct {
-	Xid  int32
+	Xid  Xid
 	Zxid ZXID
 	Err  ErrCode
 }
@@ -160,7 +162,7 @@ type pathRequest struct {
 
 type PathVersionRequest struct {
 	Path    Path
-	Version int32
+	Version Version
 }
 
 type pathWatchRequest struct {
@@ -202,7 +204,7 @@ type ConnectResponse struct {
 type CreateRequest struct {
 	Path Path
 	Data []byte
-	Acl  []ACL
+	ACL  []ACL
 	Mode CreateMode
 }
 
@@ -224,10 +226,10 @@ type errorResponse struct {
 
 type ExistsRequest pathWatchRequest
 type ExistsResponse statResponse
-type GetAclRequest pathRequest
+type GetACLRequest pathRequest
 
-type GetAclResponse struct {
-	Acl  []ACL
+type GetACLResponse struct {
+	ACL  []ACL
 	Stat Stat
 }
 
@@ -264,18 +266,18 @@ type getSaslRequest struct {
 type PingRequest struct{}
 type PingResponse struct{}
 
-type SetAclRequest struct {
+type SetACLRequest struct {
 	Path    Path
-	Acl     []ACL
-	Version int32
+	ACL     []ACL
+	Version Version
 }
 
-type SetAclResponse statResponse
+type SetACLResponse statResponse
 
 type SetDataRequest struct {
 	Path    Path
 	Data    []byte
-	Version int32
+	Version Version
 }
 
 type SetDataResponse statResponse
@@ -339,8 +341,8 @@ func RequestStructForOp(op OpCode) interface{} {
 		return &DeleteRequest{}
 	case OpExists:
 		return &ExistsRequest{}
-	case OpGetAcl:
-		return &GetAclRequest{}
+	case OpGetACL:
+		return &GetACLRequest{}
 	case OpGetChildren:
 		return &GetChildrenRequest{}
 	case OpGetChildren2:
@@ -349,8 +351,8 @@ func RequestStructForOp(op OpCode) interface{} {
 		return &GetDataRequest{}
 	case OpPing:
 		return &PingRequest{}
-	case OpSetAcl:
-		return &SetAclRequest{}
+	case OpSetACL:
+		return &SetACLRequest{}
 	case OpSetData:
 		return &SetDataRequest{}
 	case OpSetWatches:
@@ -377,8 +379,8 @@ func ResponseStructForOp(op OpCode) interface{} {
 		return &DeleteResponse{}
 	case OpExists:
 		return &ExistsResponse{}
-	case OpGetAcl:
-		return &GetAclResponse{}
+	case OpGetACL:
+		return &GetACLResponse{}
 	case OpGetChildren:
 		return &GetChildrenResponse{}
 	case OpGetChildren2:
@@ -387,8 +389,8 @@ func ResponseStructForOp(op OpCode) interface{} {
 		return &GetDataResponse{}
 	case OpPing:
 		return &PingResponse{}
-	case OpSetAcl:
-		return &SetAclResponse{}
+	case OpSetACL:
+		return &SetACLResponse{}
 	case OpSetData:
 		return &SetDataResponse{}
 	case OpSetWatches:

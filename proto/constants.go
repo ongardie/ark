@@ -40,11 +40,13 @@ import (
 )
 
 // Diego added this
+type Xid int32
+
 const (
-	XidWatcherEvent = -1
-	XidPing         = -2
-	XidAuth         = -4
-	XidSetWatches   = -8
+	XidWatcherEvent Xid = -1
+	XidPing         Xid = -2
+	XidAuth         Xid = -4
+	XidSetWatches   Xid = -8
 )
 
 type OpCode int32
@@ -64,8 +66,8 @@ const (
 	OpExists                 = 3
 	OpGetData                = 4
 	OpSetData                = 5
-	OpGetAcl                 = 6
-	OpSetAcl                 = 7
+	OpGetACL                 = 6
+	OpSetACL                 = 7
 	OpGetChildren            = 8
 	OpSync                   = 9
 	OpPing                   = 11
@@ -93,8 +95,8 @@ var (
 		OpExists:          "exists",
 		OpGetData:         "getData",
 		OpSetData:         "setData",
-		OpGetAcl:          "getACL",
-		OpSetAcl:          "setACL",
+		OpGetACL:          "getACL",
+		OpSetACL:          "setACL",
 		OpGetChildren:     "getChildren",
 		OpSync:            "sync",
 		OpPing:            "ping",
@@ -210,7 +212,7 @@ var (
 		ErrNotEmpty:                errNotEmpty,
 		ErrSessionExpired:          errSessionExpired,
 		// ErrInvalidCallback:         errInvalidCallback,
-		ErrInvalidAcl:   errInvalidACL,
+		ErrInvalidACL:   errInvalidACL,
 		ErrAuthFailed:   errAuthFailed,
 		ErrClosing:      errClosing,
 		ErrNothing:      errNothing,
@@ -247,7 +249,7 @@ const (
 	ErrNotEmpty                ErrCode = -111
 	ErrSessionExpired          ErrCode = -112
 	ErrInvalidCallback         ErrCode = -113
-	ErrInvalidAcl              ErrCode = -114
+	ErrInvalidACL              ErrCode = -114
 	ErrAuthFailed              ErrCode = -115
 	ErrClosing                 ErrCode = -116
 	ErrNothing                 ErrCode = -117

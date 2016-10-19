@@ -31,7 +31,7 @@ type proxyConn struct {
 	client   net.Conn
 	server   net.Conn
 	opsMutex sync.Mutex
-	ops      map[int32]proto.OpCode
+	ops      map[proto.Xid]proto.OpCode
 }
 
 func opName(opCode proto.OpCode) string {
@@ -128,7 +128,7 @@ func decodeRequest(count uint64, msg []byte, withHeader func(proto.RequestHeader
 	return fmt.Sprintf("%+v %v request %+v", reqHeader, opName(reqHeader.OpCode), req)
 }
 
-func decodeReply(count uint64, msg []byte, getOpCode func(xid int32) (proto.OpCode, bool)) string {
+func decodeReply(count uint64, msg []byte, getOpCode func(xid proto.Xid) (proto.OpCode, bool)) string {
 	if count == 0 {
 		req := &proto.ConnectResponse{}
 		more, err := jute.DecodeSome(msg, req)
@@ -303,7 +303,7 @@ func (conn *proxyConn) replyLoop() {
 			return
 		}
 		//log.Printf("[conn %v] got %v bytes", conn.id, len(msg))
-		str := decodeReply(conn.replies, msg, func(xid int32) (proto.OpCode, bool) {
+		str := decodeReply(conn.replies, msg, func(xid proto.Xid) (proto.OpCode, bool) {
 			conn.opsMutex.Lock()
 			opCode, ok := conn.ops[xid]
 			if ok {
@@ -339,7 +339,7 @@ func handle(client net.Conn) {
 		id:     connCount,
 		client: client,
 		server: server,
-		ops:    make(map[int32]proto.OpCode),
+		ops:    make(map[proto.Xid]proto.OpCode),
 	}
 	mutex.Unlock()
 	go conn.requestLoop()

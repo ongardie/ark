@@ -191,7 +191,7 @@ func (t *Tree) Create2(ctx *context, req *proto.Create2Request) (*Tree, *proto.C
 				// NumChildren == creations - deletions
 				// Cversion + NumChildren == creations * 2
 				// (Cversion + NumChildren) / 2 == creations
-				creations := (node.stat.Cversion + node.stat.NumChildren) / 2
+				creations := (uint64(node.stat.Cversion) + uint64(node.stat.NumChildren)) / 2
 				name = proto.Component(fmt.Sprintf("%s%010d", name, creations))
 			}
 			resp.Path = joinPath(append(components[:component], name))
@@ -201,7 +201,7 @@ func (t *Tree) Create2(ctx *context, req *proto.Create2Request) (*Tree, *proto.C
 			}
 			child := &Tree{
 				data: req.Data,
-				acl:  req.Acl,
+				acl:  req.ACL,
 				stat: proto.Stat{
 					Czxid: ctx.zxid,
 					Ctime: ctx.time,
@@ -370,13 +370,13 @@ func (t *Tree) CheckVersion(ctx *context, req *proto.CheckVersionRequest) (*prot
 	return &proto.CheckVersionResponse{}, proto.ErrOk
 }
 
-func (t *Tree) GetACL(ctx *context, req *proto.GetAclRequest) (*proto.GetAclResponse, RegisterEvents, proto.ErrCode) {
+func (t *Tree) GetACL(ctx *context, req *proto.GetACLRequest) (*proto.GetACLResponse, RegisterEvents, proto.ErrCode) {
 	target := t.lookup(req.Path)
 	if target == nil {
 		return nil, nil, proto.ErrNoNode
 	}
-	return &proto.GetAclResponse{
-		Acl:  target.acl,
+	return &proto.GetACLResponse{
+		ACL:  target.acl,
 		Stat: target.stat,
 	}, nil, proto.ErrOk
 }
@@ -444,9 +444,9 @@ func (t *Tree) SetData(ctx *context, req *proto.SetDataRequest) (*Tree, *proto.S
 	return root, resp, notify, proto.ErrOk
 }
 
-func (t *Tree) SetACL(ctx *context, req *proto.SetAclRequest) (*Tree, *proto.SetAclResponse, NotifyEvents, proto.ErrCode) {
+func (t *Tree) SetACL(ctx *context, req *proto.SetACLRequest) (*Tree, *proto.SetACLResponse, NotifyEvents, proto.ErrCode) {
 	var notify NotifyEvents
-	resp := &proto.SetAclResponse{}
+	resp := &proto.SetACLResponse{}
 	var do func(node *Tree, components []proto.Component) (*Tree, proto.ErrCode)
 	do = func(node *Tree, components []proto.Component) (*Tree, proto.ErrCode) {
 		if len(components) == 0 {
@@ -458,7 +458,7 @@ func (t *Tree) SetACL(ctx *context, req *proto.SetAclRequest) (*Tree, *proto.Set
 				return nil, errCode
 			}
 			node = node.shallowClone()
-			node.acl = req.Acl
+			node.acl = req.ACL
 			node.stat.Mzxid = ctx.zxid // TODO: update?
 			node.stat.Mtime = ctx.time // TODO: update?
 			node.stat.Aversion += 1    // TODO: overflow?

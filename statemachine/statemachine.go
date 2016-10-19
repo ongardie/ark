@@ -59,7 +59,7 @@ type Connections []Connection
 type context struct {
 	zxid      proto.ZXID
 	term      uint64
-	time      int64
+	time      proto.Time
 	rand      []byte
 	server    uint64
 	sessionId proto.SessionId
@@ -85,7 +85,7 @@ type CommandHeader1 struct {
 	SessionId proto.SessionId
 	ConnId    ConnectionId
 	CmdId     CommandId
-	Time      int64
+	Time      proto.Time
 	Rand      []byte
 	Identity  []proto.Identity
 }
@@ -434,8 +434,8 @@ func (sm *StateMachine) applyCommand(ctx *context, cmdBuf []byte) ([]byte, proto
 	case proto.OpMulti:
 		tree, respBuf, notify, errCode = applyMulti(ctx, sm.tree, reqBuf)
 
-	case proto.OpSetAcl:
-		if req := new(proto.SetAclRequest); decode(req) {
+	case proto.OpSetACL:
+		if req := new(proto.SetACLRequest); decode(req) {
 			tree, resp, notify, errCode = sm.tree.SetACL(ctx, req)
 		}
 
@@ -664,7 +664,7 @@ func (sm *StateMachine) queueQuery(query *asyncQuery) {
 
 	ctx := &context{
 		zxid:      sm.lastApplied,
-		time:      time.Now().Unix(),
+		time:      proto.Time(time.Now().UnixNano() / 1e6),
 		sessionId: query.conn.SessionId(),
 		connId:    query.conn.ConnId(),
 		cmdId:     0,
@@ -692,8 +692,8 @@ func (sm *StateMachine) queueQuery(query *asyncQuery) {
 			log.Printf("Exists(%+v) -> %+v", req, resp)
 		}
 
-	case proto.OpGetAcl:
-		if req := new(proto.GetAclRequest); decode(req) {
+	case proto.OpGetACL:
+		if req := new(proto.GetACLRequest); decode(req) {
 			resp, register, errCode = sm.tree.GetACL(ctx, req)
 			log.Printf("GetACL(%+v) -> %+v", req, resp)
 		}
