@@ -143,7 +143,7 @@ func (client *Client) Request(
 	}
 }
 
-func (client *Client) SyncRequest(
+func (client *Client) RequestSync(
 	opCode proto.OpCode,
 	req []byte,
 	watcher *Watcher) Reply {

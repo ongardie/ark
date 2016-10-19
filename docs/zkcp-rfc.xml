@@ -329,7 +329,7 @@
         <section anchor="ping-request" title="Ping">
           <t>A client SHOULD issue Ping requests during periods of inactivity to maintain its session (see <xref target="expiration" />).</t>
 
-          <t>Ping requests and responses are formatted just like normal requests and resposnes (<xref target="requests" />) except that they SHOULD use xid -2. TODO: or is this a MUST?</t>
+          <t>Ping requests and responses are formatted just like normal requests and responses (<xref target="requests" />) except that they MUST use xid -2. <cref>TestZKCP_connect_pingWithNormalXid</cref></t>
 
           <t>PingRequest and PingResponse are both empty, thus serializing as zero bytes with Jute encoding (<xref target="jute" />).</t>
 
@@ -374,9 +374,11 @@
           ]]></artwork>
         </figure>
 
-        <t>xid counts the number of requests the client has made over the connection. The client MUST set xid to 1 for its first request (TODO: verify), and to the next integer for subsequent requests. TODO: overflow.</t>
+        <t>The xid field is used to identify the request on the connection. The client SHOULD set xid to a unique positive integer (except for special Ping requests, as described in <xref target="ping-request" />). Assigning xid values by counting from 1 is RECOMMENDED. <cref>TestZKCP_connect_startingXid, TestZKCP_connect_xidOutOfOrder, TestZKCP_connect_xidRepeated</cref></t>
 
-        <t>opCode, sometimes called "type", identifies the operation being performed. For example, Create (<xref target="create-request" />) is invoked with opCode 1.</t>
+        <t>TODO: overflow.</t>
+
+        <t>opCode, sometimes called "type", specifies which type of operation is being performed. For example, Create (<xref target="create-request" />) is invoked with opCode 1.</t>
 
         <t>The format of the request itself is described in the following subsections and encoded using Jute (<xref target="jute" />).</t>
 
