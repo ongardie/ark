@@ -203,8 +203,12 @@ func (t *Tree) Create2(ctx *context, req *proto.Create2Request) (*Tree, *proto.C
 				data: req.Data,
 				acl:  req.ACL,
 				stat: proto.Stat{
-					Czxid: ctx.zxid,
-					Ctime: ctx.time,
+					Czxid:      ctx.zxid,
+					Ctime:      ctx.time,
+					Mzxid:      ctx.zxid,
+					Mtime:      ctx.time,
+					Pzxid:      ctx.zxid,
+					DataLength: int32(len(req.Data)),
 				},
 				container: req.Mode == proto.ModeContainer,
 			}
@@ -421,6 +425,7 @@ func (t *Tree) SetData(ctx *context, req *proto.SetDataRequest) (*Tree, *proto.S
 			node.stat.Mzxid = ctx.zxid
 			node.stat.Mtime = ctx.time
 			node.stat.Version += 1 // TODO: overflow?
+			node.stat.DataLength = int32(len(req.Data))
 			resp.Stat = node.stat
 			notify = append(notify,
 				TreeEvent{req.Path, proto.EventNodeDataChanged})
@@ -459,9 +464,7 @@ func (t *Tree) SetACL(ctx *context, req *proto.SetACLRequest) (*Tree, *proto.Set
 			}
 			node = node.shallowClone()
 			node.acl = req.ACL
-			node.stat.Mzxid = ctx.zxid // TODO: update?
-			node.stat.Mtime = ctx.time // TODO: update?
-			node.stat.Aversion += 1    // TODO: overflow?
+			node.stat.Aversion += 1 // TODO: overflow?
 			resp.Stat = node.stat
 			return node, proto.ErrOk
 		} else {
