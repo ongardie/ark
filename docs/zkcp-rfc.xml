@@ -378,7 +378,39 @@
 
         <t>TODO: overflow.</t>
 
-        <t>opCode, sometimes called "type", specifies which type of operation is being performed. For example, Create (<xref target="create-request" />) is invoked with opCode 1.</t>
+        <t>opCode, sometimes called "type", specifies which type of operation is being performed. The following values are defined:</t>
+
+        <texttable>
+          <ttcol align="right">opCode Value</ttcol><ttcol>Operation</ttcol><ttcol>Apache ZooKeeper Release</ttcol>
+          <c>0</c><c>Notification (TODO)</c><c>3.0</c>
+          <c>1</c><c>Create v1 (<xref target="create-request" />)</c><c>3.0</c>
+          <c>2</c><c>Delete (<xref target="delete-request" />)</c><c>3.0</c>
+          <c>3</c><c>Exists (<xref target="exists-request" />)</c><c>3.0</c>
+          <c>4</c><c>Get Data (<xref target="get-data-request" />)</c><c>3.0</c>
+          <c>5</c><c>Set Data (<xref target="set-data-request" />)</c><c>3.0</c>
+          <c>6</c><c>Get ACL (<xref target="get-acl-request" />)</c><c>3.0</c>
+          <c>7</c><c>Set ACL (<xref target="set-acl-request" />)</c><c>3.0</c>
+          <c>8</c><c>Get Children v1 (<xref target="get-children-request" />)</c><c>3.0</c>
+          <c>9</c><c>Sync (<xref target="sync-request" />)</c><c>3.0</c>
+          <!-- They seem to have skipped 10. -->
+          <c>11</c><c>Ping (<xref target="ping-request" />)</c><c>3.0</c>
+          <c>12</c><c>Get Children v2 (<xref target="get-children-request" />)</c><c>3.3</c>
+          <c>13</c><c>Check Version (TODO: can this be called outside multi?)</c><c>3.4</c>
+          <c>14</c><c>Multi (<xref target="multi-request" />)</c><c>3.4</c>
+          <c>15</c><c>Create v2 (<xref target="create-request" />)</c><c>3.5 (planned)</c>
+          <c>16</c><c>Reconfigure cluster membership (out of scope)</c><c>3.5 (planned)</c>
+          <c>17</c><c>Check Watches (TODO)</c><c>3.5 (planned)</c>
+          <c>18</c><c>Remove Watches (TODO)</c><c>3.5 (planned)</c>
+          <c>19</c><c>Create Container (<xref target="create-request" />)</c><c>3.5 (planned)</c>
+          <c>20</c><c>Delete Container (TODO)</c><c>3.5 (planned)</c>
+          <c>21</c><c>Create TTL (TODO)</c><c>3.6 (planned)</c>
+          <c>100</c><c>Auth (TODO)</c><c>3.0</c>
+          <c>101</c><c>Set Watches (<xref target="set-watches-request" />)</c><c>3.0</c>
+          <c>102</c><c>SASL (TODO)</c><c>3.4</c>
+          <c>-1</c><c>Error (TODO)</c><c>3.0</c>
+          <c>-10</c><c>Create Session (TODO)</c><c>3.0</c>
+          <c>-11</c><c>Close Session (TODO)</c><c>3.0</c>
+        </texttable>
 
         <t>The format of the request itself is described in the following subsections and encoded using Jute (<xref target="jute" />).</t>
 
