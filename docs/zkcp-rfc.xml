@@ -237,17 +237,19 @@
 
       <section anchor="sessions" title="Session Management">
 
-        <section title="Initial Connection Setup">
+        <section title="Connection Setup">
 
-          <t>Clients connect to a server of their choice over TCP and immediately issue a Connect Request (preceded by the size in bytes of the Connect Request, as described in <xref target="framing" />, and encoded with Jute, as described in <xref target="jute" />). Clients may send a ConnectRequestV1 or a ConnectRequestV2, which adds an additional 'readOnly' field.</t>
+          <t>Clients connect to a server of their choice over TCP and immediately issue a Connect Request (preceded by the size in bytes of the Connect Request, as described in <xref target="framing" />, and encoded with Jute, as described in <xref target="jute" />). Clients MUST send either a ConnectRequestV1 or a ConnectRequestV2, which adds an additional 'readOnly' field.</t>
+
+          <t>The first time a client connects, this establishes a session with the servers. The client MAY continue that session on subsequent connections by using the same session ID and password previously assigned by the server.</t>
 
           <figure>
             <artwork><![CDATA[
   struct ConnectRequestV1 {
     sint32 protocolVersion
     sint64 lastZxidSeen
-    sint32 timeOut
-    sint64 sessionId
+    sint32 timeout
+    sint64 sessionID
     byte[] passwd
   }
             ]]></artwork>
@@ -257,30 +259,32 @@
   struct ConnectRequestV2 {
     sint32 protocolVersion
     sint64 lastZxidSeen
-    sint32 timeOut
-    sint64 sessionId
+    sint32 timeout
+    sint64 sessionID
     byte[] passwd
     bool   readOnly
   }
             ]]></artwork>
           </figure>
 
-          <t>The client MUST set protocolVersion to 0.</t>
+          <t>The client MUST set protocolVersion to 0. No other protocol version has yet been defined.</t>
 
-          <t>For an initial connection with no existing session, the client MUST set lastZxidSeen to 0, it MUST set sessionId to 0, and it SHOULD set passwd to a 16-byte array of zeros.</t>
+          <t>The client MUST either set lastZxidSeen to 0 or to any zxid previously returned by any server. <cref>TestZKCP_connect_barelyTolerable2, TestZKCP_connect_lastZxidTooHigh</cref></t>
 
-          <t>The client SHOULD set timeOut to a positive integer representing the desired duration for the client's session timeout, measured in milliseconds.</t>
+          <t>For an initial connection with no existing session, the client MUST set sessionID to 0 and SHOULD set passwd to an empty array or a 16-byte array of zeros <cref>TestZKCP_connect_barelyTolerable, TestZKCP_connect_barelyTolerable2, TestZKCP_connect_badSessionID</cref>. To reconnect with an existing session, the client MUST set the sessionID and passwd fields to those provided by the server in an earlier Connect Response <cref>TestZKCP_connect_badSessionID, TestZKCP_connect_badPassword</cref>.</t>
+
+          <t>The client MAY set timeout to a positive integer representing the desired duration for the client's session timeout, measured in milliseconds.</t>
 
           <t>TODO: what does readOnly mean?</t>
 
-          <t>The server MAY respond with either ConnectResponseV1 or ConnectResponseV2 (preceded by its length, as described in <xref target="framing" />, and encoded with Jute, as described in <xref target="jute" />).</t>
+          <t>The server MUST respond to a ConnectRequestV1 with a ConnectRequestV1, if it responds at all. The server MUST respond to a ConnectRequestV2 with either a ConnectResponseV1 or a ConnectResponseV2, if it responds at all. Either response MUST be preceded by its length, as described in <xref target="framing" />, and encoded with Jute, as described in <xref target="jute" />.</t>
 
           <figure>
             <artwork><![CDATA[
   struct ConnectResponseV1 {
     sint32 protocolVersion
-    sint32 timeOut
-    sint64 sessionId
+    sint32 timeout
+    sint64 sessionID
     byte[] passwd
   }
             ]]></artwork>
@@ -289,31 +293,31 @@
             <artwork><![CDATA[
   struct ConnectResponseV2 {
     sint32 protocolVersion
-    sint32 timeOut
-    sint64 sessionId
+    sint32 timeout
+    sint64 sessionID
     byte[] passwd
     bool   readOnly
   }
             ]]></artwork>
           </figure>
 
-          <t>The server MUST set protocolVersion to 0.</t>
+          <t>The server MUST accept any protocolVersion in the request <cref>TestZKCP_connect_barelyTolerable, TestZKCP_connect_barelyTolerable2</cref>. The server MUST set protocolVersion to 0 in the response.</t>
 
-          <t>The server MUST set timeOut to a positive integer representing the actual duration of the client's session timeout, measured in milliseconds.</t>
+          <t>The server MUST accept any timeout in the request <cref>TestZKCP_connect_barelyTolerable, TestZKCP_connect_barelyTolerable2</cref> but MAY choose a different value. It MUST set timeout in the response to a positive integer representing the actual duration of the client's session timeout, measured in milliseconds.</t>
 
-          <t>The server MUST set sessionId to a positive integer which opaquely identifies the client's session. It SHOULD set passwd to a value that is difficult for other clients to guess, which SHOULD be 16 bytes in length.</t>
+          <t>If the lastZxidSeen in the request is not 0 and has not been returned by any server previously, the server MAY close the TCP connection instead of replying. <cref>TestZKCP_connect_lastZxidTooHigh</cref></t>
+
+          <t>If the sessionID in the request is 0 and the request has a non-zero passsword, the server MAY close the connection or return a sessionID of 0, or it MAY continue as if the password was zero.</t>
+
+          <t>If the sessionID in the request is 0 and the request has a zero password (of reasonable length), the server MUST set sessionID to a positive integer that opaquely identifies the client's new session. It MUST set passwd to a value that is difficult for other clients to guess, which SHOULD be 16 bytes in length. <cref>TestZKCP_connect_ok</cref></t>
+
+          <t>If the sessionID in the request is non-zero but does not identify a valid session or if the sessionID in the request is non-zero but the password does not match that of the identified session, the server MAY either close the connection or return with the sessionID set to 0 and the passwd set to zeros (and deny further requests). <cref>TestZKCP_connect_badSessionID, TestZKCP_connect_badPassword</cref></t>
+
+          <t>If the sessionID in the request is non-zero and identifies a valid session for which the password in the request matches, the server MUST set sessionID and passwd in the response the same as the request. In this case, the servers SHOULD disconnect previous connections sharing the same session. <cref>TestZKCP_connect_ok</cref></t>
 
           <t>TODO: what does readOnly mean?</t>
 
-          <t>After receiving a Connect Response, the client MAY issue requests, as described in <xref target="requests" />.</t>
-        </section>
-
-        <section title="Subsequent Connection Setup">
-          <t>After its initial connection, the client may attempt to reconnect to any server while maintaining its session. To do so, it should send a Connect Request with the sessionId and passwd fields set to those provided by the server in the initial Connect Response.</t>
-
-          <t>TODO: how does the server indicate session expired or bad password?</t>
-
-          <t>Upon accepting a subsequent connection from a client, the servers SHOULD disconnect existing connections from that client. TODO: how do they notify?</t>
+          <t>After receiving a Connect Response with a nonzero sessionID, the client MAY issue requests, as described in <xref target="requests" />.</t>
         </section>
 
         <section anchor="expiration" title="Session Expiration">
