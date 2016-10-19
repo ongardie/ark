@@ -72,12 +72,18 @@
       <section anchor="data-model" title="Data Model">
         <t>The servers maintain a tree data structure, where each node in the tree is called a znode. A znode can store a byte array of uninterpreted data, it can have named child znodes, or both.</t>
 
+        <t>TODO: Types of znodes: normal, epehemeral, and container.</t>
+
         <section title="Znode Stats">
-          <t>The servers MUST maintain the following information for each znode, called a Stat structure. Of course, server implementations MAY use this representation internally or they MAY compute this Stat structure when required.</t>
+          <t>The servers MUST maintain the following information for each znode, called a Stat structure. Of course, server implementations MAY use this representation internally or they MAY compute Stat structures when required.</t>
 
           <figure>
             <artwork><![CDATA[
   struct Stat {
+    sint64 czxid
+    sint64 mzxid
+    sint64 ctime
+    sint64 mtime
     sint32 version
     sint32 cversion
     sint32 aversion
@@ -89,27 +95,31 @@
             ]]></artwork>
           </figure>
 
-          <t>The server MUST set czxid to the server-assigned zxid of the request which created the znode.</t>
+          <t>The server MUST set czxid to the zxid of the request that created the znode <cref>TestZKCP_Stat_create</cref>. A zxid is assigned by the server and uniquely identifies a request, as described in ???.</t>
 
-          <t>The server MUST set mzxid to the server-assigned zxid of the request which last modified the znode's data (TODO: or ACL?).</t>
+          <t>The server MUST set mzxid to the zxid of the request that last set the znode's data field (even if it was set the same as before). If the znode's data has never been explicitly set, the server MUST set mzxid to the zxid of the request that created the znode. <cref>TestZKCP_Stat_mod</cref></t>
 
-          <t>The server MUST set version to the number of requests which have changed the znode's data (TODO: or ACL?), excluding the request which created the znode. (version MUST be 0 for newly created znodes.)</t>
+          <t>The server MUST set ctime to the approximate number of milliseconds elapsed since the Unix epoch when the znode was created. <cref>TestZKCP_Stat_create</cref></t>
 
-          <t>The server MUST set cversion to the number of requests which have created or deleted direct children of the znode. (cversion MUST be 0 for newly created znodes.)</t>
+          <t>The server MUST set mtime to the approximate number of milliseconds elapsed since the Unix epoch when the znode's data field was last set (even if it was set the same as before). If the znode's data has never been explicitly set, the server MUST set mtime the same as the znode's ctime. <cref>TestZKCP_Stat_mod</cref></t>
 
-          <t>The server MUST set aversion to the number of requests which have changed the znode's ACL, excluding the request which created the znode. (aversion MUST be 0 for newly created znodes.)</t>
+          <t>The server MUST set version to the number of requests which have set the znode's data field (even if it was set the same as before), excluding the request which created the znode. If the znode's data has never been explicitly set, the server MUST set version to 0. <cref>TestZKCP_Stat_mod</cref></t>
+
+          <t>The server MUST set cversion to the number of requests which have created or deleted direct children of the znode. The server MUST set cverson to 0 for newly created znodes. <cref>TestZKCP_Stat_children</cref></t>
+
+          <t>The server MUST set aversion to the number of requests which have changed the znode's ACL (even if it was set the same as before), excluding the request which created the znode. The server MUST set aversion to 0 for newly created znodes. <cref>TestZKCP_Stat_acl</cref></t>
+
+          <t>If the znode is ephemeral, the server MUST set ephemeralOwner to the session ID of the request which created the znode. If the znode is not ephemeral or is a container znodes, the server MUST set ephemeralOwner to 0. <cref>TestZKCP_Stat_ephemeral</cref></t>
+
+          <t>The server MUST set dataLength to the length in bytes of the opaque data stored in the znode (possibly 0). <cref>TestZKCP_Stat_dataLength</cref></t>
+
+          <t>The server MUST set numChildren to the count of the direct child znodes which this znode contains (possibly 0). <cref>TestZKCP_Stat_children</cref></t>
+
+          <t>The server MUST set pzxid to the zxid of the request which last added or removed direct child znodes from this znode. If the znode's data has never had children, the server MUST set pzxid to the zxid of the request that created the znode. <cref>TestZKCP_Stat_children</cref></t>
 
           <t>TODO: how are transactions counted?</t>
 
           <t>TODO: overflow</t>
-
-          <t>If the znode is ephemeral, the server MUST set ephemeralOwner to the session ID of the request which created the znode. If the znode is not ephemeral, the server MUST set ephemeralOwner to 0.</t>
-
-          <t>The server MUST set dataLength to the length in bytes of the opaque data stored in the znode (possibly 0).</t>
-
-          <t>The server MUST set numChildren to the count of the direct child znodes which this znode contains (possibly 0).</t>
-
-          <t>The server MUST set pzxid to the server-assigned zxid of the request which last added or removed direct child znodes from this znode.</t>
         </section>
 
         <section title="Access Control Lists (ACLs)">
