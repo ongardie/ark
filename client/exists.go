@@ -12,54 +12,54 @@ import (
 	"salesforce.com/zoolater/proto"
 )
 
-type StatResponse struct {
+type ExistsResponse struct {
 	Xid  proto.Xid
 	Stat proto.Stat
 }
 
-func (client *Client) Stat(
+func (client *Client) Exists(
 	path proto.Path,
 	watcher func(proto.EventType, proto.Path),
-	handler func(StatResponse, error)) {
+	handler func(ExistsResponse, error)) {
 	req := proto.ExistsRequest{
 		Path:  path,
 		Watch: watcher != nil,
 	}
 	reqBuf, err := jute.Encode(&req)
 	if err != nil {
-		handler(StatResponse{}, err)
+		handler(ExistsResponse{}, err)
 	}
 	client.Request(proto.OpExists, reqBuf, &Watcher{
 		[]proto.EventType{proto.EventNodeCreated, proto.EventNodeDeleted, proto.EventNodeDataChanged},
 		watcher,
 	}, func(reply Reply) {
 		if reply.Err != proto.ErrOk {
-			handler(StatResponse{},
-				fmt.Errorf("Error in Stat(%v): %v", path, reply.Err.Error()))
+			handler(ExistsResponse{},
+				fmt.Errorf("Error in Exists(%v): %v", path, reply.Err.Error()))
 		}
 		var resp proto.ExistsResponse
 		err = jute.Decode(reply.Buf, &resp)
 		if err != nil {
-			handler(StatResponse{}, err)
+			handler(ExistsResponse{}, err)
 		}
-		handler(StatResponse{
+		handler(ExistsResponse{
 			Xid:  reply.Xid,
 			Stat: resp.Stat,
 		}, nil)
 	})
 }
 
-func (client *Client) StatSync(
+func (client *Client) ExistsSync(
 	path proto.Path,
 	watcher func(proto.EventType, proto.Path)) (
-	StatResponse,
+	ExistsResponse,
 	error) {
 	type pair struct {
-		resp StatResponse
+		resp ExistsResponse
 		err  error
 	}
 	ch := make(chan pair)
-	client.Stat(path, watcher, func(resp StatResponse, err error) {
+	client.Exists(path, watcher, func(resp ExistsResponse, err error) {
 		ch <- pair{resp, err}
 	})
 	p := <-ch

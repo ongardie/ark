@@ -32,7 +32,7 @@ func TestZKCP_Stat_create(t *testing.T) {
 	}
 
 	// Check its czxid, ctime.
-	sresp, err := client.StatSync("/x", nil)
+	sresp, err := client.ExistsSync("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestZKCP_Stat_create(t *testing.T) {
 	}
 
 	// Check its czxid, ctime (MUST be unchanged).
-	sresp2, err := client.StatSync("/x", nil)
+	sresp2, err := client.ExistsSync("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestZKCP_Stat_mod(t *testing.T) {
 	}
 
 	// Check its mzxid, version, mtime.
-	sresp, err := client.StatSync("/x", nil)
+	sresp, err := client.ExistsSync("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestZKCP_Stat_mod(t *testing.T) {
 	}
 
 	// Check its mzxid, version, mtime (MUST be unchanged).
-	sresp2, err := client.StatSync("/x", nil)
+	sresp2, err := client.ExistsSync("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestZKCP_Stat_children(t *testing.T) {
 	}
 
 	// Check its cverson, numChildren, pzxid.
-	sresp, err := client.StatSync("/x", nil)
+	sresp, err := client.ExistsSync("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestZKCP_Stat_children(t *testing.T) {
 	}
 
 	// Check its cversion, numChildren, pzxid (MUST be unchanged).
-	sresp2, err := client.StatSync("/x", nil)
+	sresp2, err := client.ExistsSync("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +251,7 @@ func TestZKCP_Stat_children(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sresp3, err := client.StatSync("/x", nil)
+	sresp3, err := client.ExistsSync("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +277,7 @@ func TestZKCP_Stat_children(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sresp4, err := client.StatSync("/x", nil)
+	sresp4, err := client.ExistsSync("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +289,7 @@ func TestZKCP_Stat_children(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sresp5, err := client.StatSync("/x", nil)
+	sresp5, err := client.ExistsSync("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +303,7 @@ func TestZKCP_Stat_children(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sresp6, err := client.StatSync("/x", nil)
+	sresp6, err := client.ExistsSync("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +335,7 @@ func TestZKCP_Stat_dataLength(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sresp, err := client.StatSync("/x", nil)
+	sresp, err := client.ExistsSync("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,7 +363,7 @@ func TestZKCP_Stat_dataLength(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sresp2, err := client.StatSync("/y", nil)
+	sresp2, err := client.ExistsSync("/y", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -390,7 +390,7 @@ func TestZKCP_Stat_acl(t *testing.T) {
 	}
 
 	// Check its aversion.
-	sresp, err := client.StatSync("/x", nil)
+	sresp, err := client.ExistsSync("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +410,7 @@ func TestZKCP_Stat_acl(t *testing.T) {
 	}
 
 	// Check its aversion (MUST be unchanged).
-	sresp2, err := client.StatSync("/x", nil)
+	sresp2, err := client.ExistsSync("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
