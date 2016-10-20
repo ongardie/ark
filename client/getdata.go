@@ -29,6 +29,7 @@ func (client *Client) GetData(
 	reqBuf, err := jute.Encode(&req)
 	if err != nil {
 		handler(GetDataResponse{}, err)
+		return
 	}
 	client.Request(proto.OpGetData, reqBuf, &Watcher{
 		[]proto.EventType{proto.EventNodeDeleted, proto.EventNodeChildrenChanged},
@@ -37,11 +38,13 @@ func (client *Client) GetData(
 		if reply.Err != proto.ErrOk {
 			handler(GetDataResponse{},
 				fmt.Errorf("Error in GetData(%v): %v", path, reply.Err.Error()))
+			return
 		}
 		var resp proto.GetDataResponse
 		err = jute.Decode(reply.Buf, &resp)
 		if err != nil {
 			handler(GetDataResponse{}, err)
+			return
 		}
 		handler(GetDataResponse{
 			Xid:  reply.Xid,

@@ -32,16 +32,19 @@ func (client *Client) SetData(
 	reqBuf, err := jute.Encode(&req)
 	if err != nil {
 		handler(SetDataResponse{}, err)
+		return
 	}
 	client.Request(proto.OpSetData, reqBuf, nil, func(reply Reply) {
 		if reply.Err != proto.ErrOk {
 			handler(SetDataResponse{},
 				fmt.Errorf("Error in SetData(%v): %v", path, reply.Err.Error()))
+			return
 		}
 		var resp proto.SetDataResponse
 		err = jute.Decode(reply.Buf, &resp)
 		if err != nil {
 			handler(SetDataResponse{}, err)
+			return
 		}
 		handler(SetDataResponse{
 			Xid:  reply.Xid,

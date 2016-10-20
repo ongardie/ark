@@ -27,16 +27,19 @@ func (client *Client) GetACL(
 	reqBuf, err := jute.Encode(&req)
 	if err != nil {
 		handler(GetACLResponse{}, err)
+		return
 	}
 	client.Request(proto.OpGetACL, reqBuf, nil, func(reply Reply) {
 		if reply.Err != proto.ErrOk {
 			handler(GetACLResponse{},
 				fmt.Errorf("Error in GetACL(%v): %v", path, reply.Err.Error()))
+			return
 		}
 		var resp proto.GetACLResponse
 		err = jute.Decode(reply.Buf, &resp)
 		if err != nil {
 			handler(GetACLResponse{}, err)
+			return
 		}
 		handler(GetACLResponse{
 			Xid:  reply.Xid,

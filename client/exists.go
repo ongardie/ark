@@ -28,6 +28,7 @@ func (client *Client) Exists(
 	reqBuf, err := jute.Encode(&req)
 	if err != nil {
 		handler(ExistsResponse{}, err)
+		return
 	}
 	client.Request(proto.OpExists, reqBuf, &Watcher{
 		[]proto.EventType{proto.EventNodeCreated, proto.EventNodeDeleted, proto.EventNodeDataChanged},
@@ -36,11 +37,13 @@ func (client *Client) Exists(
 		if reply.Err != proto.ErrOk {
 			handler(ExistsResponse{},
 				fmt.Errorf("Error in Exists(%v): %v", path, reply.Err.Error()))
+			return
 		}
 		var resp proto.ExistsResponse
 		err = jute.Decode(reply.Buf, &resp)
 		if err != nil {
 			handler(ExistsResponse{}, err)
+			return
 		}
 		handler(ExistsResponse{
 			Xid:  reply.Xid,

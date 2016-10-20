@@ -34,16 +34,19 @@ func (client *Client) Create(
 	reqBuf, err := jute.Encode(&req)
 	if err != nil {
 		handler(CreateResponse{}, err)
+		return
 	}
 	client.Request(proto.OpCreate2, reqBuf, nil, func(reply Reply) {
 		if reply.Err != proto.ErrOk {
 			handler(CreateResponse{},
 				fmt.Errorf("Error in Create(%v): %v", path, reply.Err.Error()))
+			return
 		}
 		var resp proto.Create2Response
 		err = jute.Decode(reply.Buf, &resp)
 		if err != nil {
 			handler(CreateResponse{}, err)
+			return
 		}
 		handler(CreateResponse{
 			Xid:  reply.Xid,

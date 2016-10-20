@@ -29,6 +29,7 @@ func (client *Client) GetChildren(
 	reqBuf, err := jute.Encode(&req)
 	if err != nil {
 		handler(GetChildrenResponse{}, err)
+		return
 	}
 	client.Request(proto.OpGetChildren2, reqBuf, &Watcher{
 		[]proto.EventType{proto.EventNodeDeleted, proto.EventNodeChildrenChanged},
@@ -37,11 +38,13 @@ func (client *Client) GetChildren(
 		if reply.Err != proto.ErrOk {
 			handler(GetChildrenResponse{},
 				fmt.Errorf("Error in GetChildren(%v): %v", path, reply.Err.Error()))
+			return
 		}
 		var resp proto.GetChildren2Response
 		err = jute.Decode(reply.Buf, &resp)
 		if err != nil {
 			handler(GetChildrenResponse{}, err)
+			return
 		}
 		handler(GetChildrenResponse{
 			Xid:      reply.Xid,

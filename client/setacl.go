@@ -32,16 +32,19 @@ func (client *Client) SetACL(
 	reqBuf, err := jute.Encode(&req)
 	if err != nil {
 		handler(SetACLResponse{}, err)
+		return
 	}
 	client.Request(proto.OpSetACL, reqBuf, nil, func(reply Reply) {
 		if reply.Err != proto.ErrOk {
 			handler(SetACLResponse{},
 				fmt.Errorf("Error in SetACL(%v): %v", path, reply.Err.Error()))
+			return
 		}
 		var resp proto.SetACLResponse
 		err = jute.Decode(reply.Buf, &resp)
 		if err != nil {
 			handler(SetACLResponse{}, err)
+			return
 		}
 		handler(SetACLResponse{
 			Xid:  reply.Xid,

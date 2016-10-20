@@ -28,16 +28,19 @@ func (client *Client) Delete(
 	reqBuf, err := jute.Encode(&req)
 	if err != nil {
 		handler(DeleteResponse{}, err)
+		return
 	}
 	client.Request(proto.OpDelete, reqBuf, nil, func(reply Reply) {
 		if reply.Err != proto.ErrOk {
 			handler(DeleteResponse{},
 				fmt.Errorf("Error in Delete(%v): %v", path, reply.Err.Error()))
+			return
 		}
 		var resp proto.DeleteResponse
 		err = jute.Decode(reply.Buf, &resp)
 		if err != nil {
 			handler(DeleteResponse{}, err)
+			return
 		}
 		handler(DeleteResponse{
 			Xid:  reply.Xid,
