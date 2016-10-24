@@ -19,7 +19,7 @@ type ExistsResponse struct {
 
 func (client *Client) Exists(
 	path proto.Path,
-	watcher func(proto.EventType, proto.Path),
+	watcher Watcher,
 	handler func(ExistsResponse, error)) {
 	req := proto.ExistsRequest{
 		Path:  path,
@@ -30,10 +30,16 @@ func (client *Client) Exists(
 		handler(ExistsResponse{}, err)
 		return
 	}
-	client.Request(proto.OpExists, reqBuf, &Watcher{
-		[]proto.EventType{proto.EventNodeCreated, proto.EventNodeDeleted, proto.EventNodeDataChanged},
-		watcher,
-	}, func(reply Reply) {
+	client.Request(proto.OpExists, reqBuf, func(reply Reply) {
+		if watcher != nil {
+			if reply.Err == proto.ErrOk {
+				client.RegisterWatcher(watcher, path,
+					proto.EventNodeDeleted, proto.EventNodeDataChanged)
+			} else if reply.Err == proto.ErrNoNode {
+				client.RegisterWatcher(watcher, path,
+					proto.EventNodeCreated, proto.EventNodeDataChanged)
+			}
+		}
 		if reply.Err != proto.ErrOk {
 			handler(ExistsResponse{},
 				fmt.Errorf("Error in Exists(%v): %v", path, reply.Err.Error()))
@@ -54,7 +60,7 @@ func (client *Client) Exists(
 
 func (client *Client) ExistsSync(
 	path proto.Path,
-	watcher func(proto.EventType, proto.Path)) (
+	watcher Watcher) (
 	ExistsResponse,
 	error) {
 	type pair struct {

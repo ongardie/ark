@@ -36,7 +36,7 @@ func (client *Client) Create(
 		handler(CreateResponse{}, err)
 		return
 	}
-	client.Request(proto.OpCreate2, reqBuf, nil, func(reply Reply) {
+	client.Request(proto.OpCreate2, reqBuf, func(reply Reply) {
 		if reply.Err != proto.ErrOk {
 			handler(CreateResponse{},
 				fmt.Errorf("Error in Create(%v): %v", path, reply.Err.Error()))

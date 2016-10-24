@@ -30,7 +30,7 @@ func (client *Client) Delete(
 		handler(DeleteResponse{}, err)
 		return
 	}
-	client.Request(proto.OpDelete, reqBuf, nil, func(reply Reply) {
+	client.Request(proto.OpDelete, reqBuf, func(reply Reply) {
 		if reply.Err != proto.ErrOk {
 			handler(DeleteResponse{},
 				fmt.Errorf("Error in Delete(%v): %v", path, reply.Err.Error()))

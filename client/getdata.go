@@ -20,7 +20,7 @@ type GetDataResponse struct {
 
 func (client *Client) GetData(
 	path proto.Path,
-	watcher func(proto.EventType, proto.Path),
+	watcher Watcher,
 	handler func(GetDataResponse, error)) {
 	req := proto.GetDataRequest{
 		Path:  path,
@@ -31,14 +31,15 @@ func (client *Client) GetData(
 		handler(GetDataResponse{}, err)
 		return
 	}
-	client.Request(proto.OpGetData, reqBuf, &Watcher{
-		[]proto.EventType{proto.EventNodeDeleted, proto.EventNodeChildrenChanged},
-		watcher,
-	}, func(reply Reply) {
+	client.Request(proto.OpGetData, reqBuf, func(reply Reply) {
 		if reply.Err != proto.ErrOk {
 			handler(GetDataResponse{},
 				fmt.Errorf("Error in GetData(%v): %v", path, reply.Err.Error()))
 			return
+		}
+		if watcher != nil {
+			client.RegisterWatcher(watcher, path,
+				proto.EventNodeDeleted, proto.EventNodeDataChanged)
 		}
 		var resp proto.GetDataResponse
 		err = jute.Decode(reply.Buf, &resp)
@@ -56,7 +57,7 @@ func (client *Client) GetData(
 
 func (client *Client) GetDataSync(
 	path proto.Path,
-	watcher func(proto.EventType, proto.Path)) (
+	watcher Watcher) (
 	GetDataResponse,
 	error) {
 	type pair struct {

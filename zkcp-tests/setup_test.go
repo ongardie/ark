@@ -17,6 +17,7 @@ import (
 
 const ClockSkew = 60000
 
+var OpenACL = []proto.ACL{{proto.PermAll, Anyone}}
 var Anyone = proto.Identity{Scheme: "world", ID: "anyone"}
 
 func randLetter() string {

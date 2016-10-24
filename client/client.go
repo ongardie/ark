@@ -36,6 +36,22 @@ type Client struct {
 	shutdownCh    chan struct{}
 
 	requestCh chan request
+
+	watchesMutex sync.Mutex
+	watches      map[proto.Path][]watch
+}
+
+func Go(watcher Watcher) Watcher {
+	return func(event proto.EventType) {
+		go watcher(event)
+	}
+}
+
+type Watcher func(proto.EventType)
+
+type watch struct {
+	events  []proto.EventType
+	watcher Watcher
 }
 
 type conn struct {
@@ -44,8 +60,9 @@ type conn struct {
 	sessionTimeout time.Duration
 
 	mutex    sync.Mutex
-	closed   bool
 	handlers []registeredHandler
+	closed   bool
+	closedCh chan struct{}
 }
 
 type registeredHandler struct {
@@ -56,13 +73,7 @@ type registeredHandler struct {
 type request struct {
 	opCode  proto.OpCode
 	buf     []byte
-	watcher *Watcher
 	handler func(Reply)
-}
-
-type Watcher struct {
-	Events  []proto.EventType
-	Handler func(proto.EventType, proto.Path)
 }
 
 type Options struct {
@@ -107,6 +118,7 @@ func New(servers []string, options *Options) *Client {
 		sessionId:       opt.SessionId,
 		sessionPassword: opt.SessionPassword,
 		shutdownCh:      make(chan struct{}),
+		watches:         make(map[proto.Path][]watch),
 	}
 	go client.runSender()
 	return client
@@ -128,13 +140,9 @@ func (client *Client) Session() (proto.SessionId, proto.SessionPassword) {
 	return client.sessionId, client.sessionPassword
 }
 
-func (client *Client) Request(
-	opCode proto.OpCode,
-	req []byte,
-	watcher *Watcher,
-	handler func(Reply)) {
+func (client *Client) Request(opCode proto.OpCode, req []byte, handler func(Reply)) {
 	select {
-	case client.requestCh <- request{opCode, req, watcher, handler}:
+	case client.requestCh <- request{opCode, req, handler}:
 		if client.closed() {
 			client.drainRequestCh()
 		}
@@ -143,15 +151,25 @@ func (client *Client) Request(
 	}
 }
 
-func (client *Client) RequestSync(
-	opCode proto.OpCode,
-	req []byte,
-	watcher *Watcher) Reply {
+func (client *Client) RequestSync(opCode proto.OpCode, req []byte) Reply {
 	ch := make(chan Reply)
-	client.Request(opCode, req, watcher, func(reply Reply) {
+	client.Request(opCode, req, func(reply Reply) {
 		ch <- reply
 	})
 	return <-ch
+}
+
+func (client *Client) RegisterWatcher(
+	watcher Watcher,
+	path proto.Path,
+	firstEvent proto.EventType,
+	additional ...proto.EventType) {
+	client.watchesMutex.Lock()
+	defer client.watchesMutex.Unlock()
+	client.watches[path] = append(client.watches[path], watch{
+		events:  append([]proto.EventType{firstEvent}, additional...),
+		watcher: watcher,
+	})
 }
 
 func (client *Client) closed() bool {
@@ -188,18 +206,25 @@ reconnect:
 		}
 		go conn.runReceiver()
 		xid := proto.Xid(1)
+		for _, request := range client.restoreWatches(conn) {
+			err := conn.sendRequest(xid, request)
+			if err != nil {
+				conn.close(err)
+				continue reconnect
+			}
+			xid++
+		}
 		for {
 			select {
 			case request := <-client.requestCh:
-				conn.mutex.Lock()
-				conn.handlers = append(conn.handlers, registeredHandler{xid, request.handler})
-				conn.mutex.Unlock()
 				err := conn.sendRequest(xid, request)
 				if err != nil {
 					conn.close(err)
 					continue reconnect
 				}
 				xid++
+			case <-conn.closedCh:
+				continue reconnect
 			case <-client.shutdownCh:
 				conn.close(proto.ErrClosing.Error())
 				return
@@ -214,6 +239,7 @@ func (client *Client) connect() (*conn, error) {
 	address := client.knownServers[i]
 	client.connectionAttempts++
 	client.serversMutex.Unlock()
+	log.Printf("Connecting to %v", address)
 	netConn, err := net.Dial("tcp", address)
 	if err != nil {
 		log.Printf("Error connecting to %v, trying next server", err)
@@ -221,9 +247,17 @@ func (client *Client) connect() (*conn, error) {
 		return nil, err
 	}
 	return &conn{
-		client:  client,
-		netConn: netConn,
+		client:   client,
+		netConn:  netConn,
+		closedCh: make(chan struct{}),
 	}, nil
+}
+
+// Thread-safe.
+func (conn *conn) isClosed() bool {
+	conn.mutex.Lock()
+	defer conn.mutex.Unlock()
+	return conn.closed
 }
 
 // Thread-safe.
@@ -243,6 +277,7 @@ func (conn *conn) close(err error) {
 		}
 		conn.closed = true
 		conn.handlers = nil
+		close(conn.closedCh)
 	}
 }
 
@@ -286,6 +321,9 @@ func (conn *conn) handshake() error {
 }
 
 func (conn *conn) sendRequest(xid proto.Xid, request request) error {
+	conn.mutex.Lock()
+	conn.handlers = append(conn.handlers, registeredHandler{xid, request.handler})
+	conn.mutex.Unlock()
 	header := proto.RequestHeader{
 		Xid:    xid,
 		OpCode: request.opCode,
@@ -321,23 +359,26 @@ func (conn *conn) receive() error {
 		return fmt.Errorf("error reading response header: %v", err)
 	}
 
+	switch header.Xid {
+	case proto.XidWatcherEvent:
+		var resp proto.WatcherEvent
+		err = jute.Decode(more, &resp)
+		if err != nil {
+			return err
+		}
+		conn.client.triggerWatch(resp)
+		return nil
+
+	case proto.XidPing:
+		return nil
+	}
+
 	if header.Zxid > 0 {
 		conn.client.sessionMutex.Lock()
 		if header.Zxid > conn.client.lastZxidSeen {
 			conn.client.lastZxidSeen = header.Zxid
 		}
 		conn.client.sessionMutex.Unlock()
-	}
-
-	switch header.Xid {
-	case proto.XidWatcherEvent:
-		var resp proto.WatcherEvent
-		err = jute.Decode(more, resp)
-		if err != nil {
-			return err
-		}
-	case proto.XidPing:
-		return nil
 	}
 
 	reply := Reply{
@@ -363,9 +404,81 @@ func (conn *conn) getHandler(xid proto.Xid) (func(Reply), error) {
 	}
 	first := conn.handlers[0]
 	if first.xid != xid {
-		return nil, fmt.Errorf("Error: handler for Xid %v not found (firt Xid is %v)",
+		return nil, fmt.Errorf("Error: handler for Xid %v not found (first Xid is %v)",
 			xid, first.xid)
 	}
 	conn.handlers = conn.handlers[1:]
 	return first.handler, nil
+}
+
+func (client *Client) triggerWatch(event proto.WatcherEvent) {
+	client.watchesMutex.Lock()
+	defer client.watchesMutex.Unlock()
+	list := client.watches[event.Path]
+	for i, watch := range list {
+		for _, e := range watch.events {
+			if e == event.Type {
+				if len(list) == 1 {
+					delete(client.watches, event.Path)
+				} else {
+					client.watches[event.Path] = append(list[:i-1], list[i+1:]...)
+				}
+				watch.watcher(event.Type)
+				return
+			}
+		}
+	}
+	log.Printf("Warning: received unexpected notification from server: %+v", event)
+}
+
+func (client *Client) restoreWatches(conn *conn) []request {
+	conn.client.sessionMutex.Lock()
+	req := proto.SetWatchesRequest{
+		RelativeZxid: client.lastZxidSeen,
+	}
+	conn.client.sessionMutex.Unlock()
+
+	client.watchesMutex.Lock()
+	for path, watches := range client.watches {
+		for _, watch := range watches {
+			for _, event := range watch.events {
+				switch event {
+				case proto.EventNodeCreated:
+					fallthrough
+				case proto.EventNodeDeleted:
+					req.ExistWatches = append(req.ExistWatches, path)
+				case proto.EventNodeDataChanged:
+					req.DataWatches = append(req.DataWatches, path)
+				case proto.EventNodeChildrenChanged:
+					req.ChildWatches = append(req.ChildWatches, path)
+				default:
+					log.Printf("Warning: cannot restore watch for unknown event type %v", event)
+				}
+			}
+		}
+	}
+	client.watchesMutex.Unlock()
+
+	if len(req.ExistWatches) == 0 &&
+		len(req.DataWatches) == 0 &&
+		len(req.ChildWatches) == 0 {
+		return nil
+	}
+	log.Printf("Restoring watches: %+v", req)
+	// TODO: if req is too big, split into multiple reqeusts
+	reqBuf, err := jute.Encode(&req)
+	if err != nil {
+		conn.close(err)
+		return nil
+	}
+	return []request{{
+		opCode: proto.OpSetWatches,
+		buf:    reqBuf,
+		handler: func(reply Reply) {
+			err := reply.Err.Error()
+			if err != nil {
+				conn.close(err)
+			}
+		},
+	}}
 }

@@ -37,6 +37,7 @@ package proto
 
 import (
 	"errors"
+	"fmt"
 )
 
 // Diego added this
@@ -224,7 +225,8 @@ func (e ErrCode) Error() error {
 	if err, ok := errCodeToError[e]; ok {
 		return err
 	}
-	return errUnknown
+	return fmt.Errorf("zk: unknown error (%v)", e)
+	//return errUnknown
 }
 
 const (

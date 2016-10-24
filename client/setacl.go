@@ -34,7 +34,7 @@ func (client *Client) SetACL(
 		handler(SetACLResponse{}, err)
 		return
 	}
-	client.Request(proto.OpSetACL, reqBuf, nil, func(reply Reply) {
+	client.Request(proto.OpSetACL, reqBuf, func(reply Reply) {
 		if reply.Err != proto.ErrOk {
 			handler(SetACLResponse{},
 				fmt.Errorf("Error in SetACL(%v): %v", path, reply.Err.Error()))

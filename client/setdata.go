@@ -34,7 +34,7 @@ func (client *Client) SetData(
 		handler(SetDataResponse{}, err)
 		return
 	}
-	client.Request(proto.OpSetData, reqBuf, nil, func(reply Reply) {
+	client.Request(proto.OpSetData, reqBuf, func(reply Reply) {
 		if reply.Err != proto.ErrOk {
 			handler(SetDataResponse{},
 				fmt.Errorf("Error in SetData(%v): %v", path, reply.Err.Error()))

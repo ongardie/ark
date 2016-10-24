@@ -20,7 +20,7 @@ type GetChildrenResponse struct {
 
 func (client *Client) GetChildren(
 	path proto.Path,
-	watcher func(proto.EventType, proto.Path),
+	watcher Watcher,
 	handler func(GetChildrenResponse, error)) {
 	req := proto.GetChildren2Request{
 		Path:  path,
@@ -31,14 +31,15 @@ func (client *Client) GetChildren(
 		handler(GetChildrenResponse{}, err)
 		return
 	}
-	client.Request(proto.OpGetChildren2, reqBuf, &Watcher{
-		[]proto.EventType{proto.EventNodeDeleted, proto.EventNodeChildrenChanged},
-		watcher,
-	}, func(reply Reply) {
+	client.Request(proto.OpGetChildren2, reqBuf, func(reply Reply) {
 		if reply.Err != proto.ErrOk {
 			handler(GetChildrenResponse{},
 				fmt.Errorf("Error in GetChildren(%v): %v", path, reply.Err.Error()))
 			return
+		}
+		if watcher != nil {
+			client.RegisterWatcher(watcher, path,
+				proto.EventNodeDeleted, proto.EventNodeChildrenChanged)
 		}
 		var resp proto.GetChildren2Response
 		err = jute.Decode(reply.Buf, &resp)
@@ -56,7 +57,7 @@ func (client *Client) GetChildren(
 
 func (client *Client) GetChildrenSync(
 	path proto.Path,
-	watcher func(proto.EventType, proto.Path)) (
+	watcher Watcher) (
 	GetChildrenResponse,
 	error) {
 	type pair struct {

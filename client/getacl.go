@@ -29,7 +29,7 @@ func (client *Client) GetACL(
 		handler(GetACLResponse{}, err)
 		return
 	}
-	client.Request(proto.OpGetACL, reqBuf, nil, func(reply Reply) {
+	client.Request(proto.OpGetACL, reqBuf, func(reply Reply) {
 		if reply.Err != proto.ErrOk {
 			handler(GetACLResponse{},
 				fmt.Errorf("Error in GetACL(%v): %v", path, reply.Err.Error()))
