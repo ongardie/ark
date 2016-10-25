@@ -48,11 +48,13 @@ type Conn struct {
 
 	requestCh chan request
 
-	mutex    sync.Mutex
-	netConn  net.Conn
-	handlers []registeredHandler
-	closed   bool
-	closedCh chan struct{}
+	mutex         sync.Mutex
+	netConn       net.Conn
+	outstanding   []outstanding
+	closed        bool
+	closedCh      chan struct{}
+	lastPingStart time.Time
+	lastHeartbeat time.Time
 }
 
 func Go(watcher Watcher) Watcher {
@@ -68,8 +70,9 @@ type watch struct {
 	watcher Watcher
 }
 
-type registeredHandler struct {
+type outstanding struct {
 	xid     proto.Xid
+	sent    time.Time
 	handler func(Reply)
 }
 
@@ -237,6 +240,7 @@ reconnect:
 			continue reconnect
 		}
 		go conn.runReceiver()
+		go conn.runPings()
 		xid := proto.Xid(1)
 		for _, request := range client.restoreWatches(conn) {
 			err := conn.sendRequest(xid, request)
@@ -311,14 +315,14 @@ func (conn *Conn) close(err error) {
 		if conn.netConn != nil {
 			conn.netConn.Close()
 		}
-		for _, h := range conn.handlers {
+		for _, h := range conn.outstanding {
 			h.handler(Reply{
 				Xid: h.xid,
 				Err: proto.ErrConnectionLoss,
 			})
 		}
+		conn.outstanding = nil
 		conn.closed = true
-		conn.handlers = nil
 		close(conn.closedCh)
 	}
 }
@@ -363,8 +367,9 @@ func (conn *Conn) handshake() error {
 }
 
 func (conn *Conn) sendRequest(xid proto.Xid, request request) error {
+	now := time.Now()
 	conn.mutex.Lock()
-	conn.handlers = append(conn.handlers, registeredHandler{xid, request.handler})
+	conn.outstanding = append(conn.outstanding, outstanding{xid, now, request.handler})
 	conn.mutex.Unlock()
 	header := proto.RequestHeader{
 		Xid:    xid,
@@ -377,6 +382,53 @@ func (conn *Conn) sendRequest(xid proto.Xid, request request) error {
 	packet := append(headerBuf, request.buf...)
 	err = intframe.Send(conn.netConn, packet)
 	return err
+}
+
+func (conn *Conn) runPings() {
+	pingInterval := conn.sessionTimeout / 3
+
+	header := proto.RequestHeader{
+		Xid:    proto.XidPing,
+		OpCode: proto.OpPing,
+	}
+	buf, err := jute.Encode(&header)
+	if err != nil {
+		log.Fatalf("Couldn't encode ping header: %v", err)
+	}
+
+	timer := time.NewTimer(pingInterval)
+	for {
+		select {
+		case now := <-timer.C:
+			conn.mutex.Lock()
+			nextPing := conn.lastHeartbeat.Add(pingInterval)
+			pingDue := now.After(nextPing)
+			if pingDue {
+				conn.lastPingStart = now
+			}
+			conn.mutex.Unlock()
+			if pingDue {
+				err = intframe.Send(conn.netConn, buf)
+				if err != nil {
+					conn.close(err)
+					return
+				}
+				timer.Reset(pingInterval)
+			} else {
+				timer.Reset(nextPing.Sub(now))
+			}
+		case <-conn.closedCh:
+			return
+		}
+	}
+}
+
+func (conn *Conn) pong() {
+	conn.mutex.Lock()
+	if conn.lastPingStart.After(conn.lastHeartbeat) {
+		conn.lastHeartbeat = conn.lastPingStart
+	}
+	conn.mutex.Unlock()
 }
 
 func (conn *Conn) runReceiver() {
@@ -412,6 +464,10 @@ func (conn *Conn) receive() error {
 		return nil
 
 	case proto.XidPing:
+		if header.Err != proto.ErrOk {
+			return header.Err.Error()
+		}
+		conn.pong()
 		return nil
 	}
 
@@ -430,27 +486,29 @@ func (conn *Conn) receive() error {
 		Err:  header.Err,
 	}
 
-	handler, err := conn.getHandler(header.Xid)
-	if err != nil {
-		return err
+	handler, ok := conn.getHandler(header.Xid)
+	if !ok {
+		return fmt.Errorf("Error: handler for Xid %v not found", header.Xid)
 	}
 	handler(reply)
 	return nil
 }
 
-func (conn *Conn) getHandler(xid proto.Xid) (func(Reply), error) {
+func (conn *Conn) getHandler(xid proto.Xid) (func(Reply), bool) {
 	conn.mutex.Lock()
 	defer conn.mutex.Unlock()
-	if len(conn.handlers) == 0 {
-		return nil, fmt.Errorf("Error: handler for Xid %v not found (empty list)", xid)
+	if len(conn.outstanding) == 0 {
+		return nil, false
 	}
-	first := conn.handlers[0]
+	first := conn.outstanding[0]
 	if first.xid != xid {
-		return nil, fmt.Errorf("Error: handler for Xid %v not found (first Xid is %v)",
-			xid, first.xid)
+		return nil, false
 	}
-	conn.handlers = conn.handlers[1:]
-	return first.handler, nil
+	conn.outstanding = conn.outstanding[1:]
+	if first.sent.After(conn.lastHeartbeat) {
+		conn.lastHeartbeat = first.sent
+	}
+	return first.handler, true
 }
 
 func (client *Client) triggerWatch(event proto.WatcherEvent) {
