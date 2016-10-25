@@ -18,7 +18,7 @@ func TestZKCP_Stat_create(t *testing.T) {
 	start := zknow()
 
 	// Create a new node.
-	cresp, err := client.CreateSync(
+	cresp, err := client.Create(
 		"/x",
 		nil,
 		[]proto.ACL{{proto.PermAll, Anyone}},
@@ -32,7 +32,7 @@ func TestZKCP_Stat_create(t *testing.T) {
 	}
 
 	// Check its czxid, ctime.
-	sresp, err := client.ExistsSync("/x", nil)
+	sresp, err := client.Exists("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestZKCP_Stat_create(t *testing.T) {
 	}
 
 	// Check its czxid, ctime (MUST be unchanged).
-	sresp2, err := client.ExistsSync("/x", nil)
+	sresp2, err := client.Exists("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestZKCP_Stat_mod(t *testing.T) {
 	start := zknow()
 
 	// Create a new node.
-	_, err := client.CreateSync(
+	_, err := client.Create(
 		"/x",
 		nil,
 		[]proto.ACL{{proto.PermAll, Anyone}},
@@ -83,7 +83,7 @@ func TestZKCP_Stat_mod(t *testing.T) {
 	}
 
 	// Check its mzxid, version, mtime.
-	sresp, err := client.ExistsSync("/x", nil)
+	sresp, err := client.Exists("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestZKCP_Stat_mod(t *testing.T) {
 	}
 
 	// Check its mzxid, version, mtime (MUST be unchanged).
-	sresp2, err := client.ExistsSync("/x", nil)
+	sresp2, err := client.Exists("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestZKCP_Stat_mod(t *testing.T) {
 	}
 
 	// Setting the data MUST change mzxid, version, mtime.
-	dresp, err := client.SetDataSync("/x", []byte("hi"), -1)
+	dresp, err := client.SetData("/x", []byte("hi"), -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestZKCP_Stat_mod(t *testing.T) {
 	}
 
 	// Setting the data to the same thing MUST still change mzxid, version, mtime.
-	dresp2, err := client.SetDataSync("/x", []byte("hi"), -1)
+	dresp2, err := client.SetData("/x", []byte("hi"), -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestZKCP_Stat_children(t *testing.T) {
 	defer client.Close()
 
 	// Create a new node.
-	_, err := client.CreateSync(
+	_, err := client.Create(
 		"/x",
 		nil,
 		[]proto.ACL{{proto.PermAll, Anyone}},
@@ -197,7 +197,7 @@ func TestZKCP_Stat_children(t *testing.T) {
 	}
 
 	// Check its cverson, numChildren, pzxid.
-	sresp, err := client.ExistsSync("/x", nil)
+	sresp, err := client.Exists("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestZKCP_Stat_children(t *testing.T) {
 	}
 
 	// Check its cversion, numChildren, pzxid (MUST be unchanged).
-	sresp2, err := client.ExistsSync("/x", nil)
+	sresp2, err := client.Exists("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestZKCP_Stat_children(t *testing.T) {
 	}
 
 	// Creating a child node MUST change cversion, numChildren, pzxid.
-	cresp, err := client.CreateSync(
+	cresp, err := client.Create(
 		"/x/1",
 		nil,
 		[]proto.ACL{{proto.PermAll, Anyone}},
@@ -251,7 +251,7 @@ func TestZKCP_Stat_children(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sresp3, err := client.ExistsSync("/x", nil)
+	sresp3, err := client.Exists("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +269,7 @@ func TestZKCP_Stat_children(t *testing.T) {
 	}
 
 	// Creating or deleting a child of /x/1 MUST make no difference.
-	_, err = client.CreateSync(
+	_, err = client.Create(
 		"/x/1/2",
 		nil,
 		[]proto.ACL{{proto.PermAll, Anyone}},
@@ -277,7 +277,7 @@ func TestZKCP_Stat_children(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sresp4, err := client.ExistsSync("/x", nil)
+	sresp4, err := client.Exists("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,11 +285,11 @@ func TestZKCP_Stat_children(t *testing.T) {
 		t.Errorf("stat (%+v) must not change after creating indirect child, was %+v",
 			sresp4.Stat, sresp3.Stat)
 	}
-	_, err = client.DeleteSync("/x/1/2", -1)
+	_, err = client.Delete("/x/1/2", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sresp5, err := client.ExistsSync("/x", nil)
+	sresp5, err := client.Exists("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,11 +299,11 @@ func TestZKCP_Stat_children(t *testing.T) {
 	}
 
 	// Deleting a child node MUST change cversion, numChildren, pzxid.
-	dresp, err := client.DeleteSync("/x/1", -1)
+	dresp, err := client.Delete("/x/1", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sresp6, err := client.ExistsSync("/x", nil)
+	sresp6, err := client.Exists("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +327,7 @@ func TestZKCP_Stat_dataLength(t *testing.T) {
 	defer client.Close()
 
 	// Create a new node.
-	_, err := client.CreateSync(
+	_, err := client.Create(
 		"/x",
 		nil,
 		[]proto.ACL{{proto.PermAll, Anyone}},
@@ -335,7 +335,7 @@ func TestZKCP_Stat_dataLength(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sresp, err := client.ExistsSync("/x", nil)
+	sresp, err := client.Exists("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +345,7 @@ func TestZKCP_Stat_dataLength(t *testing.T) {
 	}
 
 	// Set 2 bytes of data.
-	dresp, err := client.SetDataSync("/x", []byte("hi"), -1)
+	dresp, err := client.SetData("/x", []byte("hi"), -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -355,7 +355,7 @@ func TestZKCP_Stat_dataLength(t *testing.T) {
 	}
 
 	// Create another new node with data.
-	_, err = client.CreateSync(
+	_, err = client.Create(
 		"/y",
 		[]byte("hello"),
 		[]proto.ACL{{proto.PermAll, Anyone}},
@@ -363,7 +363,7 @@ func TestZKCP_Stat_dataLength(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sresp2, err := client.ExistsSync("/y", nil)
+	sresp2, err := client.Exists("/y", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +380,7 @@ func TestZKCP_Stat_acl(t *testing.T) {
 	defer client.Close()
 
 	// Create a new node.
-	_, err := client.CreateSync(
+	_, err := client.Create(
 		"/x",
 		nil,
 		[]proto.ACL{{proto.PermAll, Anyone}},
@@ -390,7 +390,7 @@ func TestZKCP_Stat_acl(t *testing.T) {
 	}
 
 	// Check its aversion.
-	sresp, err := client.ExistsSync("/x", nil)
+	sresp, err := client.Exists("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +410,7 @@ func TestZKCP_Stat_acl(t *testing.T) {
 	}
 
 	// Check its aversion (MUST be unchanged).
-	sresp2, err := client.ExistsSync("/x", nil)
+	sresp2, err := client.Exists("/x", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -420,7 +420,7 @@ func TestZKCP_Stat_acl(t *testing.T) {
 	}
 
 	// Setting the ACL MUST change aversion.
-	aresp, err := client.SetACLSync("/x",
+	aresp, err := client.SetACL("/x",
 		[]proto.ACL{{proto.PermAdmin | proto.PermDelete | proto.PermRead, Anyone}},
 		-1)
 	if err != nil {
@@ -432,7 +432,7 @@ func TestZKCP_Stat_acl(t *testing.T) {
 	}
 
 	// Setting the ACL to the same thing MUST still change aversion.
-	aresp2, err := client.SetACLSync("/x",
+	aresp2, err := client.SetACL("/x",
 		[]proto.ACL{{proto.PermAdmin | proto.PermDelete | proto.PermRead, Anyone}},
 		-1)
 	if err != nil {
@@ -451,7 +451,7 @@ func TestZKCP_Stat_ephemeral(t *testing.T) {
 	sessionId, _ := client.Session()
 
 	// Create a new node.
-	crespDefault, err := client.CreateSync(
+	crespDefault, err := client.Create(
 		"/default",
 		nil,
 		[]proto.ACL{{proto.PermAll, Anyone}},
@@ -464,7 +464,7 @@ func TestZKCP_Stat_ephemeral(t *testing.T) {
 			crespDefault.Stat.EphemeralOwner)
 	}
 
-	crespEphemeral, err := client.CreateSync(
+	crespEphemeral, err := client.Create(
 		"/ephemeral",
 		nil,
 		[]proto.ACL{{proto.PermAll, Anyone}},
@@ -477,7 +477,7 @@ func TestZKCP_Stat_ephemeral(t *testing.T) {
 			crespEphemeral.Stat.EphemeralOwner, sessionId)
 	}
 
-	crespSequential, err := client.CreateSync(
+	crespSequential, err := client.Create(
 		"/sequential",
 		nil,
 		[]proto.ACL{{proto.PermAll, Anyone}},
@@ -490,7 +490,7 @@ func TestZKCP_Stat_ephemeral(t *testing.T) {
 			crespSequential.Stat.EphemeralOwner)
 	}
 
-	crespEphemeralSeq, err := client.CreateSync(
+	crespEphemeralSeq, err := client.Create(
 		"/ephemeral-sequential",
 		nil,
 		[]proto.ACL{{proto.PermAll, Anyone}},
@@ -503,7 +503,7 @@ func TestZKCP_Stat_ephemeral(t *testing.T) {
 			crespEphemeralSeq.Stat.EphemeralOwner, sessionId)
 	}
 
-	crespContainer, err := client.CreateSync(
+	crespContainer, err := client.Create(
 		"/container",
 		nil,
 		[]proto.ACL{{proto.PermAll, Anyone}},

@@ -19,7 +19,7 @@ type SetACLResponse struct {
 	Stat proto.Stat
 }
 
-func (client *Client) SetACL(
+func (conn *Conn) SetACLAsync(
 	path proto.Path,
 	acl []proto.ACL,
 	version proto.Version,
@@ -34,7 +34,7 @@ func (client *Client) SetACL(
 		handler(SetACLResponse{}, err)
 		return
 	}
-	client.Request(proto.OpSetACL, reqBuf, func(reply Reply) {
+	conn.RequestAsync(proto.OpSetACL, reqBuf, func(reply Reply) {
 		if reply.Err != proto.ErrOk {
 			handler(SetACLResponse{},
 				fmt.Errorf("Error in SetACL(%v): %v", path, reply.Err.Error()))
@@ -54,7 +54,7 @@ func (client *Client) SetACL(
 	})
 }
 
-func (client *Client) SetACLSync(
+func (conn *Conn) SetACL(
 	path proto.Path,
 	acl []proto.ACL,
 	version proto.Version) (
@@ -65,9 +65,18 @@ func (client *Client) SetACLSync(
 		err  error
 	}
 	ch := make(chan pair)
-	client.SetACL(path, acl, version, func(resp SetACLResponse, err error) {
+	conn.SetACLAsync(path, acl, version, func(resp SetACLResponse, err error) {
 		ch <- pair{resp, err}
 	})
 	p := <-ch
 	return p.resp, p.err
+}
+
+func (client *Client) SetACL(
+	path proto.Path,
+	acl []proto.ACL,
+	version proto.Version) (
+	SetACLResponse,
+	error) {
+	return client.Conn().SetACL(path, acl, version)
 }

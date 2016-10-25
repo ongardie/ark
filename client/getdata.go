@@ -18,7 +18,7 @@ type GetDataResponse struct {
 	Stat proto.Stat
 }
 
-func (client *Client) GetData(
+func (conn *Conn) GetDataAsync(
 	path proto.Path,
 	watcher Watcher,
 	handler func(GetDataResponse, error)) {
@@ -31,14 +31,14 @@ func (client *Client) GetData(
 		handler(GetDataResponse{}, err)
 		return
 	}
-	client.Request(proto.OpGetData, reqBuf, func(reply Reply) {
+	conn.RequestAsync(proto.OpGetData, reqBuf, func(reply Reply) {
 		if reply.Err != proto.ErrOk {
 			handler(GetDataResponse{},
 				fmt.Errorf("Error in GetData(%v): %v", path, reply.Err.Error()))
 			return
 		}
 		if watcher != nil {
-			client.RegisterWatcher(watcher, path,
+			conn.Client().RegisterWatcher(watcher, path,
 				proto.EventNodeDeleted, proto.EventNodeDataChanged)
 		}
 		var resp proto.GetDataResponse
@@ -55,19 +55,19 @@ func (client *Client) GetData(
 	})
 }
 
-func (client *Client) GetDataSync(
-	path proto.Path,
-	watcher Watcher) (
-	GetDataResponse,
-	error) {
+func (conn *Conn) GetData(path proto.Path, watcher Watcher) (GetDataResponse, error) {
 	type pair struct {
 		resp GetDataResponse
 		err  error
 	}
 	ch := make(chan pair)
-	client.GetData(path, watcher, func(resp GetDataResponse, err error) {
+	conn.GetDataAsync(path, watcher, func(resp GetDataResponse, err error) {
 		ch <- pair{resp, err}
 	})
 	p := <-ch
 	return p.resp, p.err
+}
+
+func (client *Client) GetData(path proto.Path, watcher Watcher) (GetDataResponse, error) {
+	return client.Conn().GetData(path, watcher)
 }

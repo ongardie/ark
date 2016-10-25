@@ -18,9 +18,7 @@ type GetACLResponse struct {
 	Stat proto.Stat
 }
 
-func (client *Client) GetACL(
-	path proto.Path,
-	handler func(GetACLResponse, error)) {
+func (conn *Conn) GetACLAsync(path proto.Path, handler func(GetACLResponse, error)) {
 	req := proto.GetACLRequest{
 		Path: path,
 	}
@@ -29,7 +27,7 @@ func (client *Client) GetACL(
 		handler(GetACLResponse{}, err)
 		return
 	}
-	client.Request(proto.OpGetACL, reqBuf, func(reply Reply) {
+	conn.RequestAsync(proto.OpGetACL, reqBuf, func(reply Reply) {
 		if reply.Err != proto.ErrOk {
 			handler(GetACLResponse{},
 				fmt.Errorf("Error in GetACL(%v): %v", path, reply.Err.Error()))
@@ -49,18 +47,19 @@ func (client *Client) GetACL(
 	})
 }
 
-func (client *Client) GetACLSync(
-	path proto.Path) (
-	GetACLResponse,
-	error) {
+func (conn *Conn) GetACL(path proto.Path) (GetACLResponse, error) {
 	type pair struct {
 		resp GetACLResponse
 		err  error
 	}
 	ch := make(chan pair)
-	client.GetACL(path, func(resp GetACLResponse, err error) {
+	conn.GetACLAsync(path, func(resp GetACLResponse, err error) {
 		ch <- pair{resp, err}
 	})
 	p := <-ch
 	return p.resp, p.err
+}
+
+func (client *Client) GetACL(path proto.Path) (GetACLResponse, error) {
+	return client.Conn().GetACL(path)
 }

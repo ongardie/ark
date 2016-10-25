@@ -18,7 +18,7 @@ func TestZKCP_Exists_watchPath(t *testing.T) {
 	defer client.Close()
 
 	notified := 0
-	_, err := client.ExistsSync("/x/y", func(proto.EventType) {
+	_, err := client.Exists("/x/y", func(proto.EventType) {
 		notified++
 	})
 	if err == nil || !strings.Contains(err.Error(), "does not exist") {
@@ -27,14 +27,14 @@ func TestZKCP_Exists_watchPath(t *testing.T) {
 	if notified > 0 {
 		t.Errorf("Notified too soon")
 	}
-	_, err = client.CreateSync("/x", nil, OpenACL, proto.ModeDefault)
+	_, err = client.Create("/x", nil, OpenACL, proto.ModeDefault)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if notified > 0 {
 		t.Errorf("Notified too soon")
 	}
-	_, err = client.CreateSync("/x/y", nil, OpenACL, proto.ModeDefault)
+	_, err = client.Create("/x/y", nil, OpenACL, proto.ModeDefault)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestZKCP_Exists_watchRestore(t *testing.T) {
 	defer client.Close()
 
 	notified := 0
-	_, err := client.ExistsSync("/x/y", func(proto.EventType) {
+	_, err := client.Exists("/x/y", func(proto.EventType) {
 		notified++
 	})
 	if err == nil || !strings.Contains(err.Error(), "does not exist") {
@@ -60,17 +60,17 @@ func TestZKCP_Exists_watchRestore(t *testing.T) {
 	}
 
 	// Cause the server to close the connection
-	client.RequestSync(proto.OpError, nil)
+	client.Conn().RequestSync(proto.OpError, nil)
 	time.Sleep(time.Second) // TODO: eliminate timing
 
-	_, err = client.CreateSync("/x", nil, OpenACL, proto.ModeDefault)
+	_, err = client.Create("/x", nil, OpenACL, proto.ModeDefault)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if notified > 0 {
 		t.Errorf("Notified too soon")
 	}
-	_, err = client.CreateSync("/x/y", nil, OpenACL, proto.ModeDefault)
+	_, err = client.Create("/x/y", nil, OpenACL, proto.ModeDefault)
 	if err != nil {
 		t.Fatal(err)
 	}

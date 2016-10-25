@@ -48,7 +48,7 @@ func deleteAll(client *client.Client, path proto.Path) error {
 	if path == "/zookeeper" || strings.HasPrefix(string(path), "/zookeeper/") {
 		return nil
 	}
-	resp, err := client.GetChildrenSync(path, nil)
+	resp, err := client.GetChildren(path, nil)
 	if err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func deleteAll(client *client.Client, path proto.Path) error {
 		}
 	}
 	if path != "/" {
-		_, err = client.DeleteSync(path, -1)
+		_, err = client.Delete(path, -1)
 	}
 	return err
 }
@@ -81,22 +81,22 @@ func changeAll(client *client.Client, path proto.Path) error {
 }
 
 func changeData(client *client.Client, path proto.Path) error {
-	gresp, err := client.GetDataSync(path, nil)
+	gresp, err := client.GetData(path, nil)
 	if err != nil {
 		return err
 	}
 	data := append(gresp.Data, randLetter()...)
-	_, err = client.SetDataSync(path, data, -1)
+	_, err = client.SetData(path, data, -1)
 	return err
 }
 
 func changeACL(client *client.Client, path proto.Path) error {
-	gresp, err := client.GetACLSync(path)
+	gresp, err := client.GetACL(path)
 	if err != nil {
 		return err
 	}
 	acl := append(gresp.ACL, proto.ACL{proto.PermAll, Anyone})
-	_, err = client.SetACLSync(path, acl, -1)
+	_, err = client.SetACL(path, acl, -1)
 	return err
 }
 
@@ -104,7 +104,7 @@ func changeChildren(client *client.Client, path proto.Path) error {
 	var newChild proto.Component
 	for {
 		newChild += proto.Component(randLetter())
-		_, err := client.CreateSync(
+		_, err := client.Create(
 			join(path, newChild),
 			nil,
 			[]proto.ACL{{proto.PermAll, Anyone}},

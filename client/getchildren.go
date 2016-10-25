@@ -18,7 +18,7 @@ type GetChildrenResponse struct {
 	Stat     proto.Stat
 }
 
-func (client *Client) GetChildren(
+func (conn *Conn) GetChildrenAsync(
 	path proto.Path,
 	watcher Watcher,
 	handler func(GetChildrenResponse, error)) {
@@ -31,14 +31,14 @@ func (client *Client) GetChildren(
 		handler(GetChildrenResponse{}, err)
 		return
 	}
-	client.Request(proto.OpGetChildren2, reqBuf, func(reply Reply) {
+	conn.RequestAsync(proto.OpGetChildren2, reqBuf, func(reply Reply) {
 		if reply.Err != proto.ErrOk {
 			handler(GetChildrenResponse{},
 				fmt.Errorf("Error in GetChildren(%v): %v", path, reply.Err.Error()))
 			return
 		}
 		if watcher != nil {
-			client.RegisterWatcher(watcher, path,
+			conn.Client().RegisterWatcher(watcher, path,
 				proto.EventNodeDeleted, proto.EventNodeChildrenChanged)
 		}
 		var resp proto.GetChildren2Response
@@ -55,19 +55,19 @@ func (client *Client) GetChildren(
 	})
 }
 
-func (client *Client) GetChildrenSync(
-	path proto.Path,
-	watcher Watcher) (
-	GetChildrenResponse,
-	error) {
+func (conn *Conn) GetChildren(path proto.Path, watcher Watcher) (GetChildrenResponse, error) {
 	type pair struct {
 		resp GetChildrenResponse
 		err  error
 	}
 	ch := make(chan pair)
-	client.GetChildren(path, watcher, func(resp GetChildrenResponse, err error) {
+	conn.GetChildrenAsync(path, watcher, func(resp GetChildrenResponse, err error) {
 		ch <- pair{resp, err}
 	})
 	p := <-ch
 	return p.resp, p.err
+}
+
+func (client *Client) GetChildren(path proto.Path, watcher Watcher) (GetChildrenResponse, error) {
+	return client.Conn().GetChildren(path, watcher)
 }

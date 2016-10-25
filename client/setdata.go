@@ -19,7 +19,7 @@ type SetDataResponse struct {
 	Stat proto.Stat
 }
 
-func (client *Client) SetData(
+func (conn *Conn) SetDataAsync(
 	path proto.Path,
 	data []byte,
 	version proto.Version,
@@ -34,7 +34,7 @@ func (client *Client) SetData(
 		handler(SetDataResponse{}, err)
 		return
 	}
-	client.Request(proto.OpSetData, reqBuf, func(reply Reply) {
+	conn.RequestAsync(proto.OpSetData, reqBuf, func(reply Reply) {
 		if reply.Err != proto.ErrOk {
 			handler(SetDataResponse{},
 				fmt.Errorf("Error in SetData(%v): %v", path, reply.Err.Error()))
@@ -54,7 +54,7 @@ func (client *Client) SetData(
 	})
 }
 
-func (client *Client) SetDataSync(
+func (conn *Conn) SetData(
 	path proto.Path,
 	data []byte,
 	version proto.Version) (
@@ -65,9 +65,18 @@ func (client *Client) SetDataSync(
 		err  error
 	}
 	ch := make(chan pair)
-	client.SetData(path, data, version, func(resp SetDataResponse, err error) {
+	conn.SetDataAsync(path, data, version, func(resp SetDataResponse, err error) {
 		ch <- pair{resp, err}
 	})
 	p := <-ch
 	return p.resp, p.err
+}
+
+func (client *Client) SetData(
+	path proto.Path,
+	data []byte,
+	version proto.Version) (
+	SetDataResponse,
+	error) {
+	return client.Conn().SetData(path, data, version)
 }

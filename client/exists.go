@@ -17,8 +17,7 @@ type ExistsResponse struct {
 	Stat proto.Stat
 }
 
-func (client *Client) Exists(
-	path proto.Path,
+func (conn *Conn) ExistsAsync(path proto.Path,
 	watcher Watcher,
 	handler func(ExistsResponse, error)) {
 	req := proto.ExistsRequest{
@@ -30,13 +29,13 @@ func (client *Client) Exists(
 		handler(ExistsResponse{}, err)
 		return
 	}
-	client.Request(proto.OpExists, reqBuf, func(reply Reply) {
+	conn.RequestAsync(proto.OpExists, reqBuf, func(reply Reply) {
 		if watcher != nil {
 			if reply.Err == proto.ErrOk {
-				client.RegisterWatcher(watcher, path,
+				conn.Client().RegisterWatcher(watcher, path,
 					proto.EventNodeDeleted, proto.EventNodeDataChanged)
 			} else if reply.Err == proto.ErrNoNode {
-				client.RegisterWatcher(watcher, path,
+				conn.Client().RegisterWatcher(watcher, path,
 					proto.EventNodeCreated, proto.EventNodeDataChanged)
 			}
 		}
@@ -58,19 +57,19 @@ func (client *Client) Exists(
 	})
 }
 
-func (client *Client) ExistsSync(
-	path proto.Path,
-	watcher Watcher) (
-	ExistsResponse,
-	error) {
+func (conn *Conn) Exists(path proto.Path, watcher Watcher) (ExistsResponse, error) {
 	type pair struct {
 		resp ExistsResponse
 		err  error
 	}
 	ch := make(chan pair)
-	client.Exists(path, watcher, func(resp ExistsResponse, err error) {
+	conn.ExistsAsync(path, watcher, func(resp ExistsResponse, err error) {
 		ch <- pair{resp, err}
 	})
 	p := <-ch
 	return p.resp, p.err
+}
+
+func (client *Client) Exists(path proto.Path, watcher Watcher) (ExistsResponse, error) {
+	return client.Conn().Exists(path, watcher)
 }

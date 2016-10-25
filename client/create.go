@@ -19,7 +19,7 @@ type CreateResponse struct {
 	Stat proto.Stat
 }
 
-func (client *Client) Create(
+func (conn *Conn) CreateAsync(
 	path proto.Path,
 	data []byte,
 	acl []proto.ACL,
@@ -36,7 +36,7 @@ func (client *Client) Create(
 		handler(CreateResponse{}, err)
 		return
 	}
-	client.Request(proto.OpCreate2, reqBuf, func(reply Reply) {
+	conn.RequestAsync(proto.OpCreate2, reqBuf, func(reply Reply) {
 		if reply.Err != proto.ErrOk {
 			handler(CreateResponse{},
 				fmt.Errorf("Error in Create(%v): %v", path, reply.Err.Error()))
@@ -57,7 +57,7 @@ func (client *Client) Create(
 	})
 }
 
-func (client *Client) CreateSync(
+func (conn *Conn) Create(
 	path proto.Path,
 	data []byte,
 	acl []proto.ACL,
@@ -69,9 +69,19 @@ func (client *Client) CreateSync(
 		err  error
 	}
 	ch := make(chan pair)
-	client.Create(path, data, acl, mode, func(resp CreateResponse, err error) {
+	conn.CreateAsync(path, data, acl, mode, func(resp CreateResponse, err error) {
 		ch <- pair{resp, err}
 	})
 	p := <-ch
 	return p.resp, p.err
+}
+
+func (client *Client) Create(
+	path proto.Path,
+	data []byte,
+	acl []proto.ACL,
+	mode proto.CreateMode) (
+	CreateResponse,
+	error) {
+	return client.Conn().Create(path, data, acl, mode)
 }

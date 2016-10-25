@@ -17,7 +17,7 @@ type DeleteResponse struct {
 	Zxid proto.ZXID
 }
 
-func (client *Client) Delete(
+func (conn *Conn) DeleteAsync(
 	path proto.Path,
 	version proto.Version,
 	handler func(DeleteResponse, error)) {
@@ -30,7 +30,7 @@ func (client *Client) Delete(
 		handler(DeleteResponse{}, err)
 		return
 	}
-	client.Request(proto.OpDelete, reqBuf, func(reply Reply) {
+	conn.RequestAsync(proto.OpDelete, reqBuf, func(reply Reply) {
 		if reply.Err != proto.ErrOk {
 			handler(DeleteResponse{},
 				fmt.Errorf("Error in Delete(%v): %v", path, reply.Err.Error()))
@@ -49,19 +49,19 @@ func (client *Client) Delete(
 	})
 }
 
-func (client *Client) DeleteSync(
-	path proto.Path,
-	version proto.Version) (
-	DeleteResponse,
-	error) {
+func (conn *Conn) Delete(path proto.Path, version proto.Version) (DeleteResponse, error) {
 	type pair struct {
 		resp DeleteResponse
 		err  error
 	}
 	ch := make(chan pair)
-	client.Delete(path, version, func(resp DeleteResponse, err error) {
+	conn.DeleteAsync(path, version, func(resp DeleteResponse, err error) {
 		ch <- pair{resp, err}
 	})
 	p := <-ch
 	return p.resp, p.err
+}
+
+func (client *Client) Delete(path proto.Path, version proto.Version) (DeleteResponse, error) {
+	return client.Conn().Delete(path, version)
 }
