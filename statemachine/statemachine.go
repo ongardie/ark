@@ -21,7 +21,7 @@ import (
 )
 
 type StateMachine struct {
-	serverId          uint64
+	serverId          string
 	mutex             sync.Mutex
 	lastApplied       proto.ZXID
 	tree              *Tree
@@ -61,7 +61,7 @@ type context struct {
 	term      uint64
 	time      proto.Time
 	rand      []byte
-	server    uint64
+	server    string
 	sessionId proto.SessionId
 	connId    ConnectionId
 	cmdId     CommandId
@@ -81,7 +81,7 @@ const (
 // This is preceded by a 1-byte version number set to 1.
 type CommandHeader1 struct {
 	CmdType   CommandType
-	Server    uint64
+	Server    string
 	SessionId proto.SessionId
 	ConnId    ConnectionId
 	CmdId     CommandId
@@ -126,7 +126,7 @@ type QueryResultFn func(zxid proto.ZXID, output []byte, errCode proto.ErrCode)
 type Session struct {
 	password  proto.SessionPassword
 	connId    ConnectionId
-	connOwner uint64
+	connOwner string
 	lastCmdId CommandId
 	queries   []*asyncQuery // these are waiting for lastCmdId to advance
 	timeout   time.Duration
@@ -137,7 +137,7 @@ type Session struct {
 	lastContact time.Time
 }
 
-func NewStateMachine(serverId uint64, minSessionTimeout time.Duration) *StateMachine {
+func NewStateMachine(serverId string, minSessionTimeout time.Duration) *StateMachine {
 	return &StateMachine{
 		serverId:          serverId,
 		lastApplied:       0,
@@ -175,7 +175,7 @@ func (sm *StateMachine) Elapsed(
 	lastLeaderContact time.Time,
 	leader bool,
 	stableSince time.Time,
-	serverContact func(uint64) time.Time) *ExpireSessionsRequest {
+	serverContact func(string) time.Time) *ExpireSessionsRequest {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
 	expire := &ExpireSessionsRequest{Term: term}

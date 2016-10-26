@@ -27,7 +27,7 @@ import (
 type Server struct {
 	options struct {
 		bootstrap              bool
-		serverId               uint64
+		serverId               string
 		storeDir               string
 		peerAddress            string
 		cleartextClientAddress string
@@ -246,7 +246,7 @@ const (
 
 func (s *Server) startRaft(streamLayer raft.StreamLayer) error {
 	s.raft.settings = raft.DefaultConfig()
-	s.raft.settings.LocalID = raft.ServerID(fmt.Sprintf("server%v", s.options.serverId))
+	s.raft.settings.LocalID = raft.ServerID(s.options.serverId)
 
 	err := os.MkdirAll(s.options.storeDir, os.ModeDir|0755)
 	if err != nil {
@@ -462,7 +462,7 @@ func main() {
 	flags := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	flags.BoolVar(&s.options.bootstrap, "bootstrap", false,
 		"initialize a new cluster containing just this server and immediately exit")
-	flags.Uint64Var(&s.options.serverId, "id", 0,
+	flags.StringVar(&s.options.serverId, "id", "",
 		"local Server ID (must be unique across Raft cluster; required)")
 	flags.StringVar(&s.options.peerAddress, "peer-address", "",
 		"local `address` given to other servers (required)")
@@ -482,7 +482,7 @@ func main() {
 		"`directory` to store Raft log and snapshots")
 	flags.Parse(os.Args[1:])
 
-	if s.options.serverId == 0 {
+	if s.options.serverId == "" {
 		log.Printf("Error: -id is required")
 		flags.PrintDefaults()
 		os.Exit(2)
@@ -493,7 +493,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	s.options.storeDir = fmt.Sprintf("%s/server%v",
+	s.options.storeDir = fmt.Sprintf("%s/%v",
 		s.options.storeDir, s.options.serverId)
 
 	s.stateMachine = statemachine.NewStateMachine(s.options.serverId, HEARTBEAT_INTERVAL*3)

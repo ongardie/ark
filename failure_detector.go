@@ -6,32 +6,33 @@
 package main
 
 import (
-	"encoding/binary"
 	"io"
 	"log"
 	"net"
 	"sync"
 	"time"
 
+	"salesforce.com/zoolater/intframe"
+
 	"github.com/hashicorp/raft"
 )
 
 type failureDetector struct {
 	dialer            *LeaderNet
-	serverId          uint64
+	serverId          string
 	lastContactMutex  sync.Mutex
-	lastContact       map[uint64]time.Time
+	lastContact       map[string]time.Time
 	lastLeaderContact time.Time
 }
 
 // As a follower, pings the Raft leader every 'interval'. As a leader, receives
 // pings from the other servers.
 func newFailureDetector(raft *raft.Raft, streamLayer raft.StreamLayer,
-	serverId uint64, interval time.Duration) *failureDetector {
+	serverId string, interval time.Duration) *failureDetector {
 	fd := &failureDetector{
 		dialer:      NewLeaderNet(raft, streamLayer),
 		serverId:    serverId,
-		lastContact: make(map[uint64]time.Time),
+		lastContact: make(map[string]time.Time),
 	}
 	go fd.listen(streamLayer)
 	go fd.heartbeatLoop(interval)
@@ -62,13 +63,13 @@ func recvByte(conn net.Conn) error {
 }
 
 func (fd *failureDetector) handle(conn net.Conn) {
-	var serverId uint64
-	err := binary.Read(conn, binary.BigEndian, &serverId)
+	buf, err := intframe.Receive(conn)
 	if err != nil {
 		log.Printf("Error receiving server ID (%v), closing connection", err)
 		conn.Close()
 		return
 	}
+	serverId := string(buf)
 
 	for {
 		err := recvByte(conn)
@@ -118,7 +119,7 @@ func (fd *failureDetector) tryHeartbeat() error {
 
 	if !cached {
 		log.Printf("Sending heartbeats to %v from %v", conn.RemoteAddr(), fd.serverId)
-		err = binary.Write(conn, binary.BigEndian, fd.serverId)
+		err = intframe.Send(conn, []byte(fd.serverId))
 		if err != nil {
 			return err
 		}
@@ -144,7 +145,7 @@ func (fd *failureDetector) tryHeartbeat() error {
 	return nil
 }
 
-func (fd *failureDetector) LastContact(serverId uint64) time.Time {
+func (fd *failureDetector) LastContact(serverId string) time.Time {
 	fd.lastContactMutex.Lock()
 	defer fd.lastContactMutex.Unlock()
 	return fd.lastContact[serverId]
