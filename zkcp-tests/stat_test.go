@@ -451,7 +451,7 @@ func TestZKCP_Stat_ephemeral(t *testing.T) {
 	sessionId, _ := client.Session()
 
 	// Create a new node.
-	crespDefault, err := client.Create(
+	crespDefault, err := client.Create2(
 		"/default",
 		nil,
 		[]proto.ACL{{proto.PermAll, Anyone}},
@@ -464,7 +464,7 @@ func TestZKCP_Stat_ephemeral(t *testing.T) {
 			crespDefault.Stat.EphemeralOwner)
 	}
 
-	crespEphemeral, err := client.Create(
+	crespEphemeral, err := client.Create2(
 		"/ephemeral",
 		nil,
 		[]proto.ACL{{proto.PermAll, Anyone}},
@@ -477,7 +477,7 @@ func TestZKCP_Stat_ephemeral(t *testing.T) {
 			crespEphemeral.Stat.EphemeralOwner, sessionId)
 	}
 
-	crespSequential, err := client.Create(
+	crespSequential, err := client.Create2(
 		"/sequential",
 		nil,
 		[]proto.ACL{{proto.PermAll, Anyone}},
@@ -490,7 +490,7 @@ func TestZKCP_Stat_ephemeral(t *testing.T) {
 			crespSequential.Stat.EphemeralOwner)
 	}
 
-	crespEphemeralSeq, err := client.Create(
+	crespEphemeralSeq, err := client.Create2(
 		"/ephemeral-sequential",
 		nil,
 		[]proto.ACL{{proto.PermAll, Anyone}},
@@ -503,7 +503,7 @@ func TestZKCP_Stat_ephemeral(t *testing.T) {
 			crespEphemeralSeq.Stat.EphemeralOwner, sessionId)
 	}
 
-	crespContainer, err := client.Create(
+	crespContainer, err := client.Create2(
 		"/container",
 		nil,
 		[]proto.ACL{{proto.PermAll, Anyone}},

@@ -182,16 +182,16 @@ func MultiCreate(
 	})
 }
 
-func (mr *MultiResponse) Create(op int) (Create1Response, error) {
+func (mr *MultiResponse) Create(op int) (CreateResponse, error) {
 	if op >= len(mr.replies) {
-		return Create1Response{}, errors.New("reply index out of range")
+		return CreateResponse{}, errors.New("reply index out of range")
 	}
 	reply := mr.replies[op]
 	switch reply := reply.(type) {
 	case proto.ErrCode:
-		return Create1Response{}, reply.Error()
+		return CreateResponse{}, reply.Error()
 	case *proto.CreateResponse:
-		return Create1Response{
+		return CreateResponse{
 			Zxid: mr.Zxid,
 			Path: reply.Path,
 		}, nil
