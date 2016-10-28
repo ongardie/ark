@@ -214,26 +214,34 @@
       <section anchor="jute" title="Jute Encoding">
         <t>Jute is a simple encoding scheme that assumes the recipient knows the exact schema for the data. The following types are defined and used in the ZooKeeper client protocol.</t>
 
-        <section title="Booleans">
+        <section title="Booleans (bool)">
           <t>True is encoded as a single byte with value 1. False is encoded as the single byte with value 0.</t>
         </section>
 
-        <section title="Signed Integers">
+        <section title="Signed Integers (sint32, sint64)">
           <t>A 32-bit signed integer is encoded as four bytes in network byte order. A 64-bit signed integer is encoded as eight bytes in network byte order.</t>
         </section>
 
-        <section title="Strings and Byte Arrays">
-          <t>A string or byte array is encoded as its length in bytes as a 32-bit signed integer, followed by the bytes themselves. TODO: or is it length in unichode char points for strings?</t>
+        <section title="Strings (ustring)">
+          <t>A UTF-8 string is encoded as its length in bytes as a 32-bit signed integer, followed by the bytes themselves. No terminating null character is used.</t>
 
-          <t>A byte array of 0 length is encoded as the four bytes 0xFF 0xFF 0xFF 0xFF. TODO: really? why?</t>
+          <t>A null pointer in place of a string is encoded as the four bytes 0xFF 0xFF 0xFF 0xFF.</t>
         </section>
 
-        <section title="Arrays">
-          <t>An array is encoded as its number of elements as a 32-bit signed integer, followed by each element in turn.</t>
+        <section title="Byte Arrays (byte[])">
+          <t>A byte array is encoded as its length in bytes as a 32-bit signed integer, followed by the bytes themselves.</t>
+
+          <t>A null pointer in place of a byte array is encoded as the four bytes 0xFF 0xFF 0xFF 0xFF.</t>
+        </section>
+
+        <section title="Arrays (type[])">
+          <t>An array is encoded as its numer of elements as a 32-bit signed integer, followed by each element in turn.</t>
+
+          <t>A null pointer in place of an array is encoded as the four bytes 0xFF 0xFF 0xFF 0xFF.</t>
         </section>
 
         <section title="Structs">
-          <t>Structs are encoded as each field in turn in the order specified. As there is no special header, footer, or delimiter, some structs exist for documentation purposes only.</t>
+          <t>Structs (records) are encoded as each field in turn in the order specified. As there is no special header, footer, or delimiter, some structs exist for documentation purposes only.</t>
         </section>
       </section>
 
