@@ -8,6 +8,7 @@ package zkcptests
 import (
 	"testing"
 
+	zk "salesforce.com/zoolater/client"
 	"salesforce.com/zoolater/proto"
 )
 
@@ -18,11 +19,7 @@ func TestZKCP_Stat_create(t *testing.T) {
 	start := zknow()
 
 	// Create a new node.
-	cresp, err := client.Create(
-		"/x",
-		nil,
-		[]proto.ACL{{proto.PermAll, Anyone}},
-		proto.ModeDefault)
+	cresp, err := client.Create("/x", nil, OpenACL, proto.ModeDefault)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,11 +70,7 @@ func TestZKCP_Stat_mod(t *testing.T) {
 	start := zknow()
 
 	// Create a new node.
-	_, err := client.Create(
-		"/x",
-		nil,
-		[]proto.ACL{{proto.PermAll, Anyone}},
-		proto.ModeDefault)
+	_, err := client.Create("/x", nil, OpenACL, proto.ModeDefault)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,17 +174,43 @@ func TestZKCP_Stat_mod(t *testing.T) {
 	}
 }
 
+// Test the behavior of version for multi-ops.
+func TestZKCP_Stat_version_multi(t *testing.T) {
+	client := makeClient(t)
+	defer client.Close()
+
+	// Create a new node.
+	_, err := client.Create("/x", nil, OpenACL, proto.ModeDefault)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Change it twice in one op.
+	_, err = client.Multi(
+		zk.MultiSetData("/x", []byte("v1"), -1),
+		zk.MultiSetData("/x", []byte("v2"), -1))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check its version.
+	sresp, err := client.Exists("/x", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sresp.Stat.Version != 2 {
+		t.Errorf("Expected version 2, got %v",
+			sresp.Stat.Version)
+	}
+}
+
 // Tests the behavior of cversion, numChildren, pzxid in the Stat struct.
 func TestZKCP_Stat_children(t *testing.T) {
 	client := makeClient(t)
 	defer client.Close()
 
 	// Create a new node.
-	_, err := client.Create(
-		"/x",
-		nil,
-		[]proto.ACL{{proto.PermAll, Anyone}},
-		proto.ModeDefault)
+	_, err := client.Create("/x", nil, OpenACL, proto.ModeDefault)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,11 +262,7 @@ func TestZKCP_Stat_children(t *testing.T) {
 	}
 
 	// Creating a child node MUST change cversion, numChildren, pzxid.
-	cresp, err := client.Create(
-		"/x/1",
-		nil,
-		[]proto.ACL{{proto.PermAll, Anyone}},
-		proto.ModeDefault)
+	cresp, err := client.Create("/x/1", nil, OpenACL, proto.ModeDefault)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,11 +284,7 @@ func TestZKCP_Stat_children(t *testing.T) {
 	}
 
 	// Creating or deleting a child of /x/1 MUST make no difference.
-	_, err = client.Create(
-		"/x/1/2",
-		nil,
-		[]proto.ACL{{proto.PermAll, Anyone}},
-		proto.ModeDefault)
+	_, err = client.Create("/x/1/2", nil, OpenACL, proto.ModeDefault)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,17 +332,44 @@ func TestZKCP_Stat_children(t *testing.T) {
 	}
 }
 
+// Test the behavior of cversion for multi-ops.
+func TestZKCP_Stat_cversion_multi(t *testing.T) {
+	client := makeClient(t)
+	defer client.Close()
+
+	// Create a new node.
+	_, err := client.Create("/x", nil, OpenACL, proto.ModeDefault)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Add two children and remove one in one multi-op.
+	_, err = client.Multi(
+		zk.MultiCreate("/x/1", nil, OpenACL, proto.ModeDefault),
+		zk.MultiCreate("/x/2", nil, OpenACL, proto.ModeDefault),
+		zk.MultiDelete("/x/1", -1))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check its cversion.
+	sresp, err := client.Exists("/x", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sresp.Stat.Cversion != 3 {
+		t.Errorf("Expected cversion 3, got %v",
+			sresp.Stat.Version)
+	}
+}
+
 // Tests the behavior of dataLength in the Stat struct.
 func TestZKCP_Stat_dataLength(t *testing.T) {
 	client := makeClient(t)
 	defer client.Close()
 
 	// Create a new node.
-	_, err := client.Create(
-		"/x",
-		nil,
-		[]proto.ACL{{proto.PermAll, Anyone}},
-		proto.ModeDefault)
+	_, err := client.Create("/x", nil, OpenACL, proto.ModeDefault)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -355,11 +393,7 @@ func TestZKCP_Stat_dataLength(t *testing.T) {
 	}
 
 	// Create another new node with data.
-	_, err = client.Create(
-		"/y",
-		[]byte("hello"),
-		[]proto.ACL{{proto.PermAll, Anyone}},
-		proto.ModeDefault)
+	_, err = client.Create("/y", []byte("hello"), OpenACL, proto.ModeDefault)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,11 +414,7 @@ func TestZKCP_Stat_acl(t *testing.T) {
 	defer client.Close()
 
 	// Create a new node.
-	_, err := client.Create(
-		"/x",
-		nil,
-		[]proto.ACL{{proto.PermAll, Anyone}},
-		proto.ModeDefault)
+	_, err := client.Create("/x", nil, OpenACL, proto.ModeDefault)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -454,7 +484,7 @@ func TestZKCP_Stat_ephemeral(t *testing.T) {
 	crespDefault, err := client.Create2(
 		"/default",
 		nil,
-		[]proto.ACL{{proto.PermAll, Anyone}},
+		OpenACL,
 		proto.ModeDefault)
 	if err != nil {
 		t.Fatal(err)
@@ -467,7 +497,7 @@ func TestZKCP_Stat_ephemeral(t *testing.T) {
 	crespEphemeral, err := client.Create2(
 		"/ephemeral",
 		nil,
-		[]proto.ACL{{proto.PermAll, Anyone}},
+		OpenACL,
 		proto.ModeEphemeral)
 	if err != nil {
 		t.Fatal(err)
@@ -480,7 +510,7 @@ func TestZKCP_Stat_ephemeral(t *testing.T) {
 	crespSequential, err := client.Create2(
 		"/sequential",
 		nil,
-		[]proto.ACL{{proto.PermAll, Anyone}},
+		OpenACL,
 		proto.ModeSequential)
 	if err != nil {
 		t.Fatal(err)
@@ -493,7 +523,7 @@ func TestZKCP_Stat_ephemeral(t *testing.T) {
 	crespEphemeralSeq, err := client.Create2(
 		"/ephemeral-sequential",
 		nil,
-		[]proto.ACL{{proto.PermAll, Anyone}},
+		OpenACL,
 		proto.ModeEphemeralSequential)
 	if err != nil {
 		t.Fatal(err)
@@ -506,7 +536,7 @@ func TestZKCP_Stat_ephemeral(t *testing.T) {
 	crespContainer, err := client.Create2(
 		"/container",
 		nil,
-		[]proto.ACL{{proto.PermAll, Anyone}},
+		OpenACL,
 		proto.ModeContainer)
 	if err != nil {
 		t.Fatal(err)

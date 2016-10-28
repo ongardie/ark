@@ -103,9 +103,11 @@
 
           <t>The server MUST set mtime to the approximate number of milliseconds elapsed since the Unix epoch when the znode's data field was last set (even if it was set the same as before). If the znode's data has never been explicitly set, the server MUST set mtime the same as the znode's ctime. <cref>TestZKCP_Stat_mod</cref></t>
 
-          <t>The server MUST set version to the number of requests which have set the znode's data field (even if it was set the same as before), excluding the request which created the znode. If the znode's data has never been explicitly set, the server MUST set version to 0. <cref>TestZKCP_Stat_mod</cref></t>
+          <t>The server MUST set version to the number of requests which have set the znode's data field (even if it was set the same as before), excluding the request which created the znode. If the znode's data has never been explicitly set, the server MUST set version to 0. <cref>TestZKCP_Stat_mod</cref> For the purpose of version, the server MUST count each operation within a Multi request as a separate request. <cref>TestZKCP_Stat_version_multi</cref></t>
 
-          <t>The server MUST set cversion to the number of requests which have created or deleted direct children of the znode. The server MUST set cverson to 0 for newly created znodes. <cref>TestZKCP_Stat_children</cref></t>
+          <t>The server MUST set cversion to the number of requests which have created or deleted direct children of the znode. The server MUST set cverson to 0 for newly created znodes. <cref>TestZKCP_Stat_children</cref> For the purpose of cversion, the server MUST count each operation within a Multi request as a separate request. <cref>TestZKCP_Stat_cversion_multi</cref></t>
+
+          <t>TODO: does cversion get increased when an ephemeral direct child's session expires?</t>
 
           <t>The server MUST set aversion to the number of requests which have changed the znode's ACL (even if it was set the same as before), excluding the request which created the znode. The server MUST set aversion to 0 for newly created znodes. <cref>TestZKCP_Stat_acl</cref></t>
 
@@ -117,7 +119,7 @@
 
           <t>The server MUST set pzxid to the zxid of the request which last added or removed direct child znodes from this znode. If the znode's data has never had children, the server MUST set pzxid to the zxid of the request that created the znode. <cref>TestZKCP_Stat_children</cref></t>
 
-          <t>TODO: how are transactions counted?</t>
+          <t>TODO: does pzxid change when an ephemeral direct child's session expires?</t>
 
           <t>TODO: overflow</t>
         </section>
