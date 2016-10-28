@@ -1,6 +1,6 @@
 [submodule "raft"]
 	path = vendor/github.com/hashicorp/raft
-	url = https://github.com/ongardie/hashicorp-raft.git
+	url = https://github.com/hashicorp/raft.git
 [submodule "raft-boltdb"]
 	path = vendor/github.com/hashicorp/raft-boltdb
 	url = https://github.com/hashicorp/raft-boltdb.git

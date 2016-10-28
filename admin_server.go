@@ -11,7 +11,15 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/hashicorp/raft"
 )
+
+type addVoterRequest struct {
+	ServerId  raft.ServerID
+	Address   raft.ServerAddress
+	PrevIndex raft.Index
+}
 
 // REST-based management interface to the server.
 func newAdminServer(s *Server) *http.Server {
@@ -25,19 +33,25 @@ func newAdminServer(s *Server) *http.Server {
 		fmt.Fprintf(w, "admin http server")
 	})
 	adminMux.HandleFunc("/raft/stats", func(w http.ResponseWriter, req *http.Request) {
-		for k, v := range s.raft.handle.Stats() {
-			fmt.Fprintf(w, "%v: %v\n", k, v)
-		}
-	})
-	adminMux.HandleFunc("/raft/membership", func(w http.ResponseWriter, req *http.Request) {
-		future := s.raft.handle.GetConfiguration()
+		future := s.raft.handle.Stats()
 		err := future.Error()
 		if err != nil {
 			fmt.Fprintf(w, "error: %v", err)
 			return
 		}
-		fmt.Fprintf(w, "index: %v, configuration: %+v",
-			future.Index(), future.Configuration())
+		for k, v := range future.Stats().Strings() {
+			fmt.Fprintf(w, "%v: %v\n", k, v)
+		}
+	})
+	adminMux.HandleFunc("/raft/membership", func(w http.ResponseWriter, req *http.Request) {
+		future := s.raft.handle.GetMembership()
+		err := future.Error()
+		if err != nil {
+			fmt.Fprintf(w, "error: %v", err)
+			return
+		}
+		fmt.Fprintf(w, "index: %v, membership: %+v",
+			future.Index(), future.Membership())
 	})
 	adminMux.HandleFunc("/api/raft/addvoter", func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == "POST" {

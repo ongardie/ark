@@ -269,7 +269,7 @@ func (s *Server) startRaft(streamLayer raft.StreamLayer) error {
 	s.raft.transport = raft.NewNetworkTransportWithLogger(streamLayer, 4, time.Second, nil)
 
 	if s.options.bootstrap {
-		configuration := raft.Configuration{
+		membership := raft.Membership{
 			Servers: []raft.Server{
 				raft.Server{
 					Suffrage: raft.Voter,
@@ -281,7 +281,7 @@ func (s *Server) startRaft(streamLayer raft.StreamLayer) error {
 
 		err = raft.BootstrapCluster(s.raft.settings,
 			s.raft.logStore, s.raft.stableStore, s.raft.snapStore, s.raft.transport,
-			configuration)
+			membership)
 		if err != nil {
 			return fmt.Errorf("Unable to bootstrap Raft server: %v\n", err)
 		}
@@ -296,12 +296,6 @@ func (s *Server) startRaft(streamLayer raft.StreamLayer) error {
 	}
 
 	return nil
-}
-
-type addVoterRequest struct {
-	ServerId  raft.ServerID
-	Address   raft.ServerAddress
-	PrevIndex uint64
 }
 
 func (s *Server) serve() error {
@@ -344,14 +338,13 @@ func (s *Server) serve() error {
 func isLeader(r *raft.Raft) bool {
 	return r.State() == raft.Leader
 }
-func getTerm(r *raft.Raft) uint64 {
-	str := r.Stats()["term"]
-	var term uint64
-	_, err := fmt.Sscanf(str, "%d", &term)
+func getTerm(r *raft.Raft) raft.Term {
+	future := r.Stats()
+	err := future.Error()
 	if err != nil {
-		log.Fatalf("sscanf failed to convert '%v' to uint64: %v", str, err)
+		log.Fatalf("Failed to get Raft term: %v", err)
 	}
-	return term
+	return future.Stats().Term
 }
 
 func (s *Server) expireSessions() {

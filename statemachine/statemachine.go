@@ -58,7 +58,7 @@ type Connections []Connection
 
 type context struct {
 	zxid      proto.ZXID
-	term      uint64
+	term      raft.Term
 	time      proto.Time
 	rand      []byte
 	server    string
@@ -91,7 +91,7 @@ type CommandHeader1 struct {
 }
 
 type ExpireSessionsRequest struct {
-	Term     uint64
+	Term     raft.Term
 	Sessions []ExpireSessionsEntry
 }
 type ExpireSessionsEntry struct {
@@ -171,7 +171,7 @@ func (sm *StateMachine) Ping(sessionId proto.SessionId,
 
 func (sm *StateMachine) Elapsed(
 	now time.Time,
-	term uint64,
+	term raft.Term,
 	lastLeaderContact time.Time,
 	leader bool,
 	stableSince time.Time,
