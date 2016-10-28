@@ -13,7 +13,6 @@ import (
 )
 
 type ExistsResponse struct {
-	Xid  proto.Xid
 	Stat proto.Stat
 }
 
@@ -51,7 +50,6 @@ func (conn *Conn) ExistsAsync(path proto.Path,
 			return
 		}
 		handler(ExistsResponse{
-			Xid:  reply.Xid,
 			Stat: resp.Stat,
 		}, nil)
 	})

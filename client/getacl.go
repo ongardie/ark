@@ -13,7 +13,6 @@ import (
 )
 
 type GetACLResponse struct {
-	Xid  proto.Xid
 	ACL  []proto.ACL
 	Stat proto.Stat
 }
@@ -40,7 +39,6 @@ func (conn *Conn) GetACLAsync(path proto.Path, handler func(GetACLResponse, erro
 			return
 		}
 		handler(GetACLResponse{
-			Xid:  reply.Xid,
 			ACL:  resp.ACL,
 			Stat: resp.Stat,
 		}, nil)

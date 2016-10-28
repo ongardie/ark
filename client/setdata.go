@@ -13,7 +13,6 @@ import (
 )
 
 type SetDataResponse struct {
-	Xid  proto.Xid
 	Zxid proto.ZXID
 	Stat proto.Stat
 }
@@ -46,7 +45,6 @@ func (conn *Conn) SetDataAsync(
 			return
 		}
 		handler(SetDataResponse{
-			Xid:  reply.Xid,
 			Zxid: reply.Zxid,
 			Stat: resp.Stat,
 		}, nil)

@@ -13,13 +13,11 @@ import (
 )
 
 type Create1Response struct {
-	Xid  proto.Xid
 	Zxid proto.ZXID
 	Path proto.Path
 }
 
 type CreateResponse struct {
-	Xid  proto.Xid
 	Zxid proto.ZXID
 	Path proto.Path
 	Stat proto.Stat
@@ -55,7 +53,6 @@ func (conn *Conn) CreateAsync(
 			return
 		}
 		handler(CreateResponse{
-			Xid:  reply.Xid,
 			Zxid: reply.Zxid,
 			Path: resp.Path,
 			Stat: resp.Stat,

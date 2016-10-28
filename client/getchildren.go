@@ -13,7 +13,6 @@ import (
 )
 
 type GetChildrenResponse struct {
-	Xid      proto.Xid
 	Children []proto.Component
 	Stat     proto.Stat
 }
@@ -48,7 +47,6 @@ func (conn *Conn) GetChildrenAsync(
 			return
 		}
 		handler(GetChildrenResponse{
-			Xid:      reply.Xid,
 			Children: resp.Children,
 			Stat:     resp.Stat,
 		}, nil)

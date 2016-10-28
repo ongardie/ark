@@ -13,7 +13,6 @@ import (
 )
 
 type GetDataResponse struct {
-	Xid  proto.Xid
 	Data []byte
 	Stat proto.Stat
 }
@@ -48,7 +47,6 @@ func (conn *Conn) GetDataAsync(
 			return
 		}
 		handler(GetDataResponse{
-			Xid:  reply.Xid,
 			Data: resp.Data,
 			Stat: resp.Stat,
 		}, nil)

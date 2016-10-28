@@ -13,7 +13,6 @@ import (
 )
 
 type SetACLResponse struct {
-	Xid  proto.Xid
 	Zxid proto.ZXID
 	Path proto.Path
 	Stat proto.Stat
@@ -47,7 +46,6 @@ func (conn *Conn) SetACLAsync(
 			return
 		}
 		handler(SetACLResponse{
-			Xid:  reply.Xid,
 			Zxid: reply.Zxid,
 			Stat: resp.Stat,
 		}, nil)

@@ -26,7 +26,6 @@ type multiOp struct {
 }
 
 type CheckVersionResponse struct {
-	Xid  proto.Xid
 	Zxid proto.ZXID
 }
 
@@ -193,7 +192,6 @@ func (mr *MultiResponse) Create(op int) (Create1Response, error) {
 		return Create1Response{}, reply.Error()
 	case *proto.CreateResponse:
 		return Create1Response{
-			Xid:  mr.Xid,
 			Zxid: mr.Zxid,
 			Path: reply.Path,
 		}, nil
@@ -218,7 +216,6 @@ func (mr *MultiResponse) Delete(op int) (DeleteResponse, error) {
 		return DeleteResponse{}, reply.Error()
 	case *proto.DeleteResponse:
 		return DeleteResponse{
-			Xid:  mr.Xid,
 			Zxid: mr.Zxid,
 		}, nil
 	}
@@ -243,7 +240,6 @@ func (mr *MultiResponse) SetData(op int) (SetDataResponse, error) {
 		return SetDataResponse{}, reply.Error()
 	case *proto.SetDataResponse:
 		return SetDataResponse{
-			Xid:  mr.Xid,
 			Zxid: mr.Zxid,
 			Stat: reply.Stat,
 		}, nil
@@ -268,7 +264,6 @@ func (mr *MultiResponse) CheckVersion(op int) (CheckVersionResponse, error) {
 		return CheckVersionResponse{}, reply.Error()
 	case *proto.CheckVersionResponse:
 		return CheckVersionResponse{
-			Xid:  mr.Xid,
 			Zxid: mr.Zxid,
 		}, nil
 	}

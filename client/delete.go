@@ -13,7 +13,6 @@ import (
 )
 
 type DeleteResponse struct {
-	Xid  proto.Xid
 	Zxid proto.ZXID
 }
 
@@ -43,7 +42,6 @@ func (conn *Conn) DeleteAsync(
 			return
 		}
 		handler(DeleteResponse{
-			Xid:  reply.Xid,
 			Zxid: reply.Zxid,
 		}, nil)
 	})
