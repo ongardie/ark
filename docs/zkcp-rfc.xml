@@ -813,7 +813,7 @@
             <t>Multi Create is the same as normal Set Data requests (<xref target="set-data-request" />).</t>
           </section>
           <section title="Multi: Check Version">
-            <t>Note: The opCode 13 assigned to Multi: Check Version MUST NOT be used as a normal request. Doing so will cause some Apache ZooKeeper servers to crash. <cref>TestZKCP_Multi_soloCheckVersion</cref></t>
+            <t>Note: The opCode 13 assigned to Multi: Check Version MUST NOT be used as a normal request. Doing so will cause some Apache ZooKeeper servers to crash. <cref>TestZKCP_Multi_soloCheckVersion, https://issues.apache.org/jira/browse/ZOOKEEPER-2623</cref></t>
 
             <figure>
               <artwork><![CDATA[
