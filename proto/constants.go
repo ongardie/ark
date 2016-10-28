@@ -73,7 +73,7 @@ const (
 	OpSync                   = 9
 	OpPing                   = 11
 	OpGetChildren2           = 12
-	OpCheck                  = 13
+	OpCheckVersion           = 13
 	OpMulti                  = 14
 	OpCreate2                = 15
 	OpReconfig               = 16
@@ -102,7 +102,7 @@ var (
 		OpSync:            "sync",
 		OpPing:            "ping",
 		OpGetChildren2:    "getChildren2",
-		OpCheck:           "check",
+		OpCheckVersion:    "checkVersion",
 		OpMulti:           "multi",
 		OpCreate2:         "create2",
 		OpReconfig:        "reconfig",
@@ -198,7 +198,7 @@ var (
 	errInvalidACL              = errors.New("zk: invalid ACL specified")
 	errAuthFailed              = errors.New("zk: client authentication failed")
 	errClosing                 = errors.New("zk: zookeeper is closing")
-	errNothing                 = errors.New("zk: no server responsees to process")
+	errNothing                 = errors.New("zk: no server responses to process")
 	errSessionMoved            = errors.New("zk: session moved to another server, so operation is ignored")
 
 	// ErrInvalidCallback         = errors.New("zk: invalid callback specified")

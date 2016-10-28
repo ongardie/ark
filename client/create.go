@@ -12,6 +12,12 @@ import (
 	"salesforce.com/zoolater/proto"
 )
 
+type Create1Response struct {
+	Xid  proto.Xid
+	Zxid proto.ZXID
+	Path proto.Path
+}
+
 type CreateResponse struct {
 	Xid  proto.Xid
 	Zxid proto.ZXID

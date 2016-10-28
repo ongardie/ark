@@ -135,7 +135,7 @@ func applyMulti(ctx *context, tree *Tree, cmdBuf []byte) (*Tree, []byte, NotifyE
 				failed = true
 			}
 
-		case proto.OpCheck:
+		case proto.OpCheckVersion:
 			log.Printf("multi check")
 			op := &proto.CheckVersionRequest{}
 			more, err = jute.DecodeSome(more, op)
@@ -146,7 +146,7 @@ func applyMulti(ctx *context, tree *Tree, cmdBuf []byte) (*Tree, []byte, NotifyE
 			resp, errCode := tree.CheckVersion(ctx, op)
 			if errCode == proto.ErrOk {
 				respHeaders = append(respHeaders, &proto.MultiHeader{
-					Type: proto.OpCheck,
+					Type: proto.OpCheckVersion,
 					Done: false,
 					Err:  proto.ErrOk,
 				})

@@ -395,7 +395,7 @@
           <!-- They seem to have skipped 10. -->
           <c>11</c><c>Ping (<xref target="ping-request" />)</c><c>3.0</c>
           <c>12</c><c>Get Children v2 (<xref target="get-children-request" />)</c><c>3.3</c>
-          <c>13</c><c>Check Version (TODO: can this be called outside multi?)</c><c>3.4</c>
+          <c>13</c><c>Check Version (MUST NOT be used outside Multi <cref>TestZKCP_Multi_soloCheckVersion</cref>)</c><c>3.4</c>
           <c>14</c><c>Multi (<xref target="multi-request" />)</c><c>3.4</c>
           <c>15</c><c>Create v2 (<xref target="create-request" />)</c><c>3.5 (planned)</c>
           <c>16</c><c>Reconfigure cluster membership (out of scope)</c><c>3.5 (planned)</c>
@@ -734,13 +734,13 @@
 
           <figure>
             <artwork><![CDATA[
-  +----------------+--------+     +----------------+--------+--------+
-  |  MultiHeader 1 |  op 1  | ... |  MultiHeader n |  op n  |  done  |
-  +----------------+--------+     +----------------+--------+--------+
+  +----------------+--------+     +----------------+--------+-------+
+  |  MultiHeader 1 |  op 1  | ... |  MultiHeader n |  op n  |  End  |
+  +----------------+--------+     +----------------+--------+-------+
             ]]></artwork>
           </figure>
 
-          <t>Each operation is preceded by a MultiHeader.</t>
+          <t>The client MAY send 0 or more operations <cref>TestZKCP_Multi_noOps</cref>. Each operation MUST be preceded by a MultiHeader.</t>
 
           <figure>
             <artwork><![CDATA[
@@ -752,7 +752,7 @@
             ]]></artwork>
           </figure>
 
-          <t>type is the operation code. The client MUST set type to one of the following:</t>
+          <t>type is the operation code. For each operation, the client MUST set type to one of the following:</t>
 
           <texttable>
             <ttcol>type Value</ttcol><ttcol>Operation</ttcol>
@@ -762,28 +762,28 @@
             <c>13</c><c>Check Version</c>
           </texttable>
 
-          <t>The client MUST set done to false and SHOULD set err to -1.</t>
+          <t>The client MUST set done to false and SHOULD set err to -1. <cref>TestZKCP_Multi_doneWithBadTypeAndErr, TestZKCP_Multi_opWithErrSet</cref></t>
 
           <t>Each operation defines its own format, as described in the following subsections.</t>
 
-          <t>Following the final operation, the client MUST set done to a MultiHeader with type set to -1, done set to true, and err set to -1.</t>
+          <t>Following the final operation, the client MUST send the an additional MultiHeader (labeled "End") with done set to true. The client SHOULD set set type to -1 and err to -1. <cref>TestZKCP_Multi_doneWithBadTypeAndErr</cref></t>
 
           <t>Multi Responses are encoded as follows (after the ResponseHeader):</t>
           <figure>
             <artwork><![CDATA[
-  +----------------+-----------+     +----------------+-----------+--------+
-  |  MultiHeader 1 |  reply 1  | ... |  MultiHeader n |  reply n  |  done  |
-  +----------------+-----------+     +----------------+-----------+--------+
+  +----------------+-----------+     +----------------+-----------+-------+
+  |  MultiHeader 1 |  reply 1  | ... |  MultiHeader n |  reply n  |  End  |
+  +----------------+-----------+     +----------------+-----------+-------+
             ]]></artwork>
           </figure>
 
-          <t>The replies correspond to the operations in the request, in order. Each reply is preceded by a MultiHeader.</t>
+          <t>The replies correspond to the operations in the request, in order. Each reply is preceded by a MultiHeader. After the replies, the server MUST send an additional MultiHeader (labeled "End") with done set to true, type set to -1, and err set to -1 <cref>TestZKCP_Multi_noOps</cref>.</t>
 
           <t>The server MUST set done in each operation's MultiHeader to false.</t>
 
           <t>For each operation in a successful multi request, the server MUST set type to the operation code sent in the request, MUST set err to 0, and MUST include the operation-specific reply as defined in the following subsections.</t>
 
-          <t>For each operation in a failed multi request, the server MUST set type to -1. The err value for the first operation to fail in a Multi request MUST be one defined by the following subsections. The err value for all preceding operations MUST be 0 and for all subsequent operations MUST be -2. In place of a reply, the server MUST send a MultiErrorResponse with the same err value.</t>
+          <t>For each operation in a failed multi request, the server MUST set type to -1. The err value for the first operation to fail in a Multi request MUST be one defined by the following subsections. The err value for all preceding operations MUST be 0 and for all subsequent operations MUST be -2. In place of the replies, the server MUST send a MultiErrorResponse with the same err value per operation.</t>
 
           <figure>
             <artwork><![CDATA[
@@ -803,6 +803,8 @@
             <t>Multi Create is the same as normal Set Data requests (<xref target="set-data-request" />).</t>
           </section>
           <section title="Multi: Check Version">
+            <t>Note: The opCode 13 assigned to Multi: Check Version MUST NOT be used as a normal request. Doing so will cause some Apache ZooKeeper servers to crash. <cref>TestZKCP_Multi_soloCheckVersion</cref></t>
+
             <figure>
               <artwork><![CDATA[
   struct CheckVersionRequest {

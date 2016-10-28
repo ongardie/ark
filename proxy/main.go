@@ -95,9 +95,10 @@ func decodeRequest(count uint64, msg []byte, withHeader func(proto.RequestHeader
 			}
 			switch opHeader.Type {
 			case proto.OpCreate:
+			case proto.OpCreate2:
 			case proto.OpSetData:
 			case proto.OpDelete:
-			case proto.OpCheck:
+			case proto.OpCheckVersion:
 			default:
 				return fmt.Sprintf("%+v multi request with unknown type: %v",
 					reqHeader, opHeader)
@@ -231,6 +232,14 @@ func decodeReply(count uint64, msg []byte, getOpCode func(xid proto.Xid) (proto.
 						respHeader, err)
 				}
 				ops = append(ops, fmt.Sprintf("%+v create %+v", opHeader, result))
+			case proto.OpCreate2:
+				result := new(proto.Create2Response)
+				more, err = jute.DecodeSome(more, result)
+				if err != nil {
+					return fmt.Sprintf("%+v multi response with create2 decode error: %v",
+						respHeader, err)
+				}
+				ops = append(ops, fmt.Sprintf("%+v create2 %+v", opHeader, result))
 			case proto.OpSetData:
 				result := new(proto.SetDataResponse)
 				more, err = jute.DecodeSome(more, result)
@@ -239,7 +248,7 @@ func decodeReply(count uint64, msg []byte, getOpCode func(xid proto.Xid) (proto.
 						respHeader, err)
 				}
 				ops = append(ops, fmt.Sprintf("%+v setData %+v", opHeader, result))
-			case proto.OpCheck:
+			case proto.OpCheckVersion:
 				// proto.CheckResponse is empty, don't bother decoding
 				ops = append(ops, fmt.Sprintf("%+v check ok", opHeader))
 			case proto.OpDelete:

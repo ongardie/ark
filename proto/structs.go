@@ -361,7 +361,7 @@ func RequestStructForOp(op OpCode) interface{} {
 		return &SyncRequest{}
 	case OpSetAuth:
 		return &SetAuthRequest{}
-	case OpCheck:
+	case OpCheckVersion:
 		return &CheckVersionRequest{}
 	}
 	return nil
@@ -399,7 +399,7 @@ func ResponseStructForOp(op OpCode) interface{} {
 		return &SyncResponse{}
 	case OpSetAuth:
 		return &SetAuthResponse{}
-	case OpCheck:
+	case OpCheckVersion:
 		return &CheckVersionResponse{}
 	}
 	return nil

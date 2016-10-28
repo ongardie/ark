@@ -15,7 +15,6 @@ import (
 type SetDataResponse struct {
 	Xid  proto.Xid
 	Zxid proto.ZXID
-	Path proto.Path
 	Stat proto.Stat
 }
 
