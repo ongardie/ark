@@ -3,17 +3,15 @@
  * All rights reserved.
  */
 
-package zkcptests
+package main
 
 import (
-	"testing"
-
 	zk "salesforce.com/zoolater/client"
 	"salesforce.com/zoolater/proto"
 )
 
 // Tests the behavior of czxid, ctime in the Stat struct.
-func TestZKCP_Stat_create(t *testing.T) {
+func (t *Test) TestZKCP_Stat_create() {
 	client := makeClient(t)
 	defer client.Close()
 	start := zknow()
@@ -64,7 +62,7 @@ func TestZKCP_Stat_create(t *testing.T) {
 }
 
 // Tests the behavior of mzxid, version, mtime in the Stat struct.
-func TestZKCP_Stat_mod(t *testing.T) {
+func (t *Test) TestZKCP_Stat_mod() {
 	client := makeClient(t)
 	defer client.Close()
 	start := zknow()
@@ -175,7 +173,7 @@ func TestZKCP_Stat_mod(t *testing.T) {
 }
 
 // Test the behavior of version for multi-ops.
-func TestZKCP_Stat_version_multi(t *testing.T) {
+func (t *Test) TestZKCP_Stat_version_multi() {
 	client := makeClient(t)
 	defer client.Close()
 
@@ -205,7 +203,7 @@ func TestZKCP_Stat_version_multi(t *testing.T) {
 }
 
 // Tests the behavior of cversion, numChildren, pzxid in the Stat struct.
-func TestZKCP_Stat_children(t *testing.T) {
+func (t *Test) TestZKCP_Stat_children() {
 	client := makeClient(t)
 	defer client.Close()
 
@@ -333,7 +331,7 @@ func TestZKCP_Stat_children(t *testing.T) {
 }
 
 // Test the behavior of cversion for multi-ops.
-func TestZKCP_Stat_cversion_multi(t *testing.T) {
+func (t *Test) TestZKCP_Stat_cversion_multi() {
 	client := makeClient(t)
 	defer client.Close()
 
@@ -364,7 +362,7 @@ func TestZKCP_Stat_cversion_multi(t *testing.T) {
 }
 
 // Tests the behavior of dataLength in the Stat struct.
-func TestZKCP_Stat_dataLength(t *testing.T) {
+func (t *Test) TestZKCP_Stat_dataLength() {
 	client := makeClient(t)
 	defer client.Close()
 
@@ -409,7 +407,7 @@ func TestZKCP_Stat_dataLength(t *testing.T) {
 }
 
 // Tests the behavior of aversion in the Stat struct.
-func TestZKCP_Stat_acl(t *testing.T) {
+func (t *Test) TestZKCP_Stat_acl() {
 	client := makeClient(t)
 	defer client.Close()
 
@@ -475,7 +473,7 @@ func TestZKCP_Stat_acl(t *testing.T) {
 }
 
 // Tests the behavior of ephemeralOwner in the Stat struct.
-func TestZKCP_Stat_ephemeral(t *testing.T) {
+func (t *Test) TestZKCP_Stat_ephemeral() {
 	client := makeClient(t)
 	defer client.Close()
 	sessionId, _ := client.Session()

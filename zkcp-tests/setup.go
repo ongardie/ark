@@ -3,12 +3,11 @@
  * All rights reserved.
  */
 
-package zkcptests
+package main
 
 import (
 	"math/rand"
 	"strings"
-	"testing"
 	"time"
 
 	"salesforce.com/zoolater/client"
@@ -35,7 +34,7 @@ func zknow() proto.Time {
 	return proto.Time(time.Now().UnixNano() / 1e6)
 }
 
-func makeClient(t *testing.T) *client.Client {
+func makeClient(t *Test) *client.Client {
 	client := client.New([]string{"localhost:2181"}, nil)
 	err := deleteAll(client, "/")
 	if err != nil {

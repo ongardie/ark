@@ -3,17 +3,16 @@
  * All rights reserved.
  */
 
-package zkcptests
+package main
 
 import (
 	"strings"
-	"testing"
 	"time"
 
 	"salesforce.com/zoolater/proto"
 )
 
-func TestZKCP_Exists_watchPath(t *testing.T) {
+func (t *Test) TestZKCP_Exists_watchPath() {
 	client := makeClient(t)
 	defer client.Close()
 
@@ -44,7 +43,7 @@ func TestZKCP_Exists_watchPath(t *testing.T) {
 	}
 }
 
-func TestZKCP_Exists_watchRestore(t *testing.T) {
+func (t *Test) TestZKCP_Exists_watchRestore() {
 	client := makeClient(t)
 	defer client.Close()
 

@@ -3,11 +3,10 @@
  * All rights reserved.
  */
 
-package zkcptests
+package main
 
 import (
 	"net"
-	"testing"
 
 	"salesforce.com/zoolater/intframe"
 	"salesforce.com/zoolater/jute"
@@ -17,7 +16,7 @@ import (
 // This test shows that if you send a ping with a positive Xid to Apache
 // ZooKeeper, it may reply to the ping with an Xid of -2. So clients MUST NOT do
 // that.
-func TestZKCP_connect_pingWithNormalXid(t *testing.T) {
+func (t *Test) TestZKCP_connect_pingWithNormalXid() {
 	t.SkipNow()
 	conn, err := net.Dial("tcp", "localhost:2181")
 	if err != nil {
@@ -57,7 +56,7 @@ func TestZKCP_connect_pingWithNormalXid(t *testing.T) {
 
 // This test shows that ZooKeeper permits anything as the staring Xid on a
 // connection.
-func TestZKCP_connect_startingXid(t *testing.T) {
+func (t *Test) TestZKCP_connect_startingXid() {
 	conn, err := net.Dial("tcp", "localhost:2181")
 	if err != nil {
 		t.Fatal(err)
@@ -105,15 +104,15 @@ func TestZKCP_connect_startingXid(t *testing.T) {
 	}
 }
 
-func TestZKCP_connect_xidOutOfOrder(t *testing.T) {
+func (t *Test) TestZKCP_connect_xidOutOfOrder() {
 	testZKCP_connext_xids(t, 29, 30)
 }
 
-func TestZKCP_connect_xidRepeated(t *testing.T) {
+func (t *Test) TestZKCP_connect_xidRepeated() {
 	testZKCP_connext_xids(t, 30, 30)
 }
 
-func testZKCP_connext_xids(t *testing.T, xid1 proto.Xid, xid2 proto.Xid) {
+func testZKCP_connext_xids(t *Test, xid1 proto.Xid, xid2 proto.Xid) {
 	conn, err := net.Dial("tcp", "localhost:2181")
 	if err != nil {
 		t.Fatal(err)

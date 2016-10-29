@@ -3,11 +3,9 @@
  * All rights reserved.
  */
 
-package zkcptests
+package main
 
 import (
-	"testing"
-
 	zk "salesforce.com/zoolater/client"
 	"salesforce.com/zoolater/jute"
 	"salesforce.com/zoolater/proto"
@@ -22,8 +20,8 @@ var multiEnd = proto.MultiHeader{
 // This test shows that you can't send a checkVersion request to Apache
 // ZooKeeper outside of a Multi Op. Current versions will crash with a
 // NullPointerException and need to be restarted (TODO: file this).
-func TestZKCP_Multi_soloCheckVersion(t *testing.T) {
-	t.Skip()
+func (t *Test) TestZKCP_Multi_soloCheckVersion() {
+	t.SkipNow()
 	client := makeClient(t)
 	defer client.Close()
 
@@ -38,7 +36,7 @@ func TestZKCP_Multi_soloCheckVersion(t *testing.T) {
 	client.Conn().RequestSync(proto.OpCheckVersion, reqBuf)
 }
 
-func TestZKCP_Multi_noOps(t *testing.T) {
+func (t *Test) TestZKCP_Multi_noOps() {
 	client := makeClient(t)
 	defer client.Close()
 
@@ -63,7 +61,7 @@ func TestZKCP_Multi_noOps(t *testing.T) {
 	}
 }
 
-func TestZKCP_Multi_doneWithBadTypeAndErr(t *testing.T) {
+func (t *Test) TestZKCP_Multi_doneWithBadTypeAndErr() {
 	client := makeClient(t)
 	defer client.Close()
 
@@ -93,7 +91,7 @@ func TestZKCP_Multi_doneWithBadTypeAndErr(t *testing.T) {
 	}
 }
 
-func TestZKCP_Multi_opWithErrSet(t *testing.T) {
+func (t *Test) TestZKCP_Multi_opWithErrSet() {
 	client := makeClient(t)
 	defer client.Close()
 
@@ -143,7 +141,7 @@ func TestZKCP_Multi_opWithErrSet(t *testing.T) {
 	}
 }
 
-func TestZKCP_Multi_normal(t *testing.T) {
+func (t *Test) TestZKCP_Multi_normal() {
 	client := makeClient(t)
 	defer client.Close()
 

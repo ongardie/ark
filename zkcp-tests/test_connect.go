@@ -3,11 +3,10 @@
  * All rights reserved.
  */
 
-package zkcptests
+package main
 
 import (
 	"net"
-	"testing"
 
 	"salesforce.com/zoolater/intframe"
 	"salesforce.com/zoolater/jute"
@@ -60,7 +59,7 @@ func ping(conn net.Conn) error {
 	return nil
 }
 
-func TestZKCP_connect_ok(t *testing.T) {
+func (t *Test) TestZKCP_connect_ok() {
 	conn1, err := net.Dial("tcp", "localhost:2181")
 	if err != nil {
 		t.Fatal(err)
@@ -123,7 +122,7 @@ func TestZKCP_connect_ok(t *testing.T) {
 	}
 }
 
-func TestZKCP_connect_barelyTolerable(t *testing.T) {
+func (t *Test) TestZKCP_connect_barelyTolerable() {
 	conn, err := net.Dial("tcp", "localhost:2181")
 	if err != nil {
 		t.Fatal(err)
@@ -148,7 +147,7 @@ func TestZKCP_connect_barelyTolerable(t *testing.T) {
 	}
 }
 
-func TestZKCP_connect_barelyTolerable2(t *testing.T) {
+func (t *Test) TestZKCP_connect_barelyTolerable2() {
 	conn, err := net.Dial("tcp", "localhost:2181")
 	if err != nil {
 		t.Fatal(err)
@@ -175,7 +174,7 @@ func TestZKCP_connect_barelyTolerable2(t *testing.T) {
 
 // This test shows that Apache ZooKeeper may deny connections based on
 // lastZxidSeen. It's skipped since zoolater ignores the field entirely.
-func TestZKCP_connect_lastZxidTooHigh(t *testing.T) {
+func (t *Test) TestZKCP_connect_lastZxidTooHigh() {
 	t.SkipNow()
 	conn, err := net.Dial("tcp", "localhost:2181")
 	if err != nil {
@@ -202,7 +201,7 @@ func TestZKCP_connect_lastZxidTooHigh(t *testing.T) {
 	}
 }
 
-func TestZKCP_connect_badSessionID(t *testing.T) {
+func (t *Test) TestZKCP_connect_badSessionID() {
 	conn, err := net.Dial("tcp", "localhost:2181")
 	if err != nil {
 		t.Fatal(err)
@@ -228,7 +227,7 @@ func TestZKCP_connect_badSessionID(t *testing.T) {
 	}
 }
 
-func TestZKCP_connect_badPassword(t *testing.T) {
+func (t *Test) TestZKCP_connect_badPassword() {
 	conn1, err := net.Dial("tcp", "localhost:2181")
 	if err != nil {
 		t.Fatal(err)
