@@ -1,5 +1,9 @@
 /*
-This file is copied from go-zookeeper with minor modifications:
+Copyright (c) 2016, salesforce.com, inc.
+All rights reserved.
+
+Some code comes from go-zookeeper (https://github.com/samuel/go-zookeeper)
+and is:
 
 Copyright (c) 2013, Samuel Stauffer <samuel@descolada.com>
 All rights reserved.
@@ -26,11 +30,6 @@ LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
 ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-
-The Salesforce modifications are:
-Copyright (c) 2016, salesforce.com, inc.
-All rights reserved.
 */
 
 package proto
@@ -40,147 +39,10 @@ import (
 	"fmt"
 )
 
-// Diego added this
-type Xid int32
-
 const (
-	XidWatcherEvent Xid = -1
-	XidPing         Xid = -2
-	XidAuth         Xid = -4
-	XidSetWatches   Xid = -8
+	SessionPasswordLen = 16
+	DefaultPort        = 2181
 )
-
-type OpCode int32
-
-// end
-
-const (
-	protocolVersion = 0
-
-	DefaultPort = 2181
-)
-
-const (
-	OpNotify          OpCode = 0
-	OpCreate                 = 1
-	OpDelete                 = 2
-	OpExists                 = 3
-	OpGetData                = 4
-	OpSetData                = 5
-	OpGetACL                 = 6
-	OpSetACL                 = 7
-	OpGetChildren            = 8
-	OpSync                   = 9
-	OpPing                   = 11
-	OpGetChildren2           = 12
-	OpCheckVersion           = 13
-	OpMulti                  = 14
-	OpCreate2                = 15
-	OpReconfig               = 16
-	OpCheckWatches           = 17
-	OpRemoveWatches          = 18
-	OpCreateContainer        = 19
-	OpDeleteContainer        = 20
-	OpCreateTTL              = 21
-	OpClose                  = -11
-	OpSetAuth                = 100
-	OpSetWatches             = 101
-	OpError                  = -1
-)
-
-var (
-	OpNames = map[OpCode]string{
-		OpNotify:          "notify",
-		OpCreate:          "create",
-		OpDelete:          "delete",
-		OpExists:          "exists",
-		OpGetData:         "getData",
-		OpSetData:         "setData",
-		OpGetACL:          "getACL",
-		OpSetACL:          "setACL",
-		OpGetChildren:     "getChildren",
-		OpSync:            "sync",
-		OpPing:            "ping",
-		OpGetChildren2:    "getChildren2",
-		OpCheckVersion:    "checkVersion",
-		OpMulti:           "multi",
-		OpCreate2:         "create2",
-		OpReconfig:        "reconfig",
-		OpCheckWatches:    "checkWatches",
-		OpRemoveWatches:   "removeWatches",
-		OpCreateContainer: "createContainer",
-		OpDeleteContainer: "deleteContainer",
-		OpCreateTTL:       "createTTL",
-		OpClose:           "close",
-		OpSetAuth:         "setAuth",
-		OpSetWatches:      "setWatches",
-	}
-)
-
-const (
-	EventNodeCreated         EventType = 1
-	EventNodeDeleted         EventType = 2
-	EventNodeDataChanged     EventType = 3
-	EventNodeChildrenChanged EventType = 4
-
-	EventSession     EventType = -1
-	EventNotWatching EventType = -2
-)
-
-var (
-	eventNames = map[EventType]string{
-		EventNodeCreated:         "EventNodeCreated",
-		EventNodeDeleted:         "EventNodeDeleted",
-		EventNodeDataChanged:     "EventNodeDataChanged",
-		EventNodeChildrenChanged: "EventNodeChildrenChanged",
-		EventSession:             "EventSession",
-		EventNotWatching:         "EventNotWatching",
-	}
-)
-
-const (
-	StateUnknown           State = -1
-	StateDisconnected      State = 0
-	StateConnecting        State = 1
-	StateConnected         State = 3
-	StateAuthFailed        State = 4
-	StateConnectedReadOnly State = 5
-	StateSaslAuthenticated State = 6
-	StateExpired           State = -112
-)
-
-type CreateMode int32
-
-const (
-	ModeDefault             CreateMode = ModePersistent
-	ModePersistent          CreateMode = 0
-	ModeEphemeral           CreateMode = 1
-	ModeSequential          CreateMode = 2
-	ModeEphemeralSequential CreateMode = 3
-	ModeContainer           CreateMode = 4
-)
-
-var (
-	stateNames = map[State]string{
-		StateUnknown:           "StateUnknown",
-		StateDisconnected:      "StateDisconnected",
-		StateConnectedReadOnly: "StateConnectedReadOnly",
-		StateSaslAuthenticated: "StateSaslAuthenticated",
-		StateExpired:           "StateExpired",
-		StateAuthFailed:        "StateAuthFailed",
-		StateConnecting:        "StateConnecting",
-		StateConnected:         "StateConnected",
-	}
-)
-
-type State int32
-
-func (s State) String() string {
-	if name := stateNames[s]; name != "" {
-		return name
-	}
-	return "Unknown"
-}
 
 type ErrCode int32
 
@@ -258,6 +120,47 @@ const (
 	ErrSessionMoved            ErrCode = -118
 )
 
+type EventType int32
+
+const (
+	EventNodeCreated         EventType = 1
+	EventNodeDeleted         EventType = 2
+	EventNodeDataChanged     EventType = 3
+	EventNodeChildrenChanged EventType = 4
+
+	EventSession     EventType = -1
+	EventNotWatching EventType = -2
+)
+
+var (
+	eventNames = map[EventType]string{
+		EventNodeCreated:         "EventNodeCreated",
+		EventNodeDeleted:         "EventNodeDeleted",
+		EventNodeDataChanged:     "EventNodeDataChanged",
+		EventNodeChildrenChanged: "EventNodeChildrenChanged",
+		EventSession:             "EventSession",
+		EventNotWatching:         "EventNotWatching",
+	}
+)
+
+func (t EventType) String() string {
+	if name := eventNames[t]; name != "" {
+		return name
+	}
+	return "Unknown"
+}
+
+type CreateMode int32
+
+const (
+	ModeDefault             CreateMode = ModePersistent
+	ModePersistent          CreateMode = 0
+	ModeEphemeral           CreateMode = 1
+	ModeSequential          CreateMode = 2
+	ModeEphemeralSequential CreateMode = 3
+	ModeContainer           CreateMode = 4
+)
+
 type Permission int32
 
 // Constants for ACL permissions
@@ -270,40 +173,104 @@ const (
 	PermAll Permission = 0x1f
 )
 
-var (
-	emptyPassword = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+type OpCode int32
+
+const (
+	OpNotify          OpCode = 0
+	OpCreate                 = 1
+	OpDelete                 = 2
+	OpExists                 = 3
+	OpGetData                = 4
+	OpSetData                = 5
+	OpGetACL                 = 6
+	OpSetACL                 = 7
+	OpGetChildren            = 8
+	OpSync                   = 9
+	OpPing                   = 11
+	OpGetChildren2           = 12
+	OpCheckVersion           = 13
+	OpMulti                  = 14
+	OpCreate2                = 15
+	OpReconfig               = 16
+	OpCheckWatches           = 17
+	OpRemoveWatches          = 18
+	OpCreateContainer        = 19
+	OpDeleteContainer        = 20
+	OpCreateTTL              = 21
+	OpClose                  = -11
+	OpSetAuth                = 100
+	OpSetWatches             = 101
+	OpSASL                   = 102
+	OpError                  = -1
 )
 
-type EventType int32
+var (
+	OpNames = map[OpCode]string{
+		OpNotify:          "notify",
+		OpCreate:          "create",
+		OpDelete:          "delete",
+		OpExists:          "exists",
+		OpGetData:         "getData",
+		OpSetData:         "setData",
+		OpGetACL:          "getACL",
+		OpSetACL:          "setACL",
+		OpGetChildren:     "getChildren",
+		OpSync:            "sync",
+		OpPing:            "ping",
+		OpGetChildren2:    "getChildren2",
+		OpCheckVersion:    "checkVersion",
+		OpMulti:           "multi",
+		OpCreate2:         "create2",
+		OpReconfig:        "reconfig",
+		OpCheckWatches:    "checkWatches",
+		OpRemoveWatches:   "removeWatches",
+		OpCreateContainer: "createContainer",
+		OpDeleteContainer: "deleteContainer",
+		OpCreateTTL:       "createTTL",
+		OpClose:           "close",
+		OpSetAuth:         "setAuth",
+		OpSetWatches:      "setWatches",
+	}
+)
 
-func (t EventType) String() string {
-	if name := eventNames[t]; name != "" {
+const (
+	StateUnknown           State = -1
+	StateDisconnected      State = 0
+	StateConnecting        State = 1
+	StateConnected         State = 3
+	StateAuthFailed        State = 4
+	StateConnectedReadOnly State = 5
+	StateSaslAuthenticated State = 6
+	StateExpired           State = -112
+)
+
+var (
+	stateNames = map[State]string{
+		StateUnknown:           "StateUnknown",
+		StateDisconnected:      "StateDisconnected",
+		StateConnectedReadOnly: "StateConnectedReadOnly",
+		StateSaslAuthenticated: "StateSaslAuthenticated",
+		StateExpired:           "StateExpired",
+		StateAuthFailed:        "StateAuthFailed",
+		StateConnecting:        "StateConnecting",
+		StateConnected:         "StateConnected",
+	}
+)
+
+type State int32
+
+func (s State) String() string {
+	if name := stateNames[s]; name != "" {
 		return name
 	}
 	return "Unknown"
 }
 
-// Mode is used to build custom server modes (leader|follower|standalone).
-type Mode uint8
-
-func (m Mode) String() string {
-	if name := modeNames[m]; name != "" {
-		return name
-	}
-	return "unknown"
-}
+type Xid int32
 
 const (
-	ModeUnknown    Mode = iota
-	ModeLeader     Mode = iota
-	ModeFollower   Mode = iota
-	ModeStandalone Mode = iota
-)
-
-var (
-	modeNames = map[Mode]string{
-		ModeLeader:     "leader",
-		ModeFollower:   "follower",
-		ModeStandalone: "standalone",
-	}
+	XidWatcherEvent Xid = -1
+	XidPing         Xid = -2
+	XidAuth         Xid = -4
+	XidSetWatches   Xid = -8
 )

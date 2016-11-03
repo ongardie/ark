@@ -1,5 +1,9 @@
 /*
-This file is copied from go-zookeeper with minor modifications:
+Copyright (c) 2016, salesforce.com, inc.
+All rights reserved.
+
+Some code comes from go-zookeeper (https://github.com/samuel/go-zookeeper)
+and is:
 
 Copyright (c) 2013, Samuel Stauffer <samuel@descolada.com>
 All rights reserved.
@@ -26,21 +30,10 @@ LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
 ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-
-The Salesforce modifications are:
-Copyright (c) 2016, salesforce.com, inc.
-All rights reserved.
 */
 
 package proto
 
-import (
-	"log"
-	"time"
-)
-
-// Diego added this
 type Path string
 type Component string
 type ZXID int64
@@ -48,16 +41,6 @@ type SessionId int64
 type SessionPassword []byte // 16 bytes
 type Version int32
 type Time int64 // milliseconds form Unix epoch
-
-const SessionPasswordLen = 16
-
-// end
-
-type defaultLogger struct{}
-
-func (defaultLogger) Printf(format string, a ...interface{}) {
-	log.Printf(format, a...)
-}
 
 type ACL struct {
 	Perms    Permission
@@ -83,54 +66,6 @@ type Stat struct {
 	Pzxid          ZXID      // last modified children
 }
 
-// ServerClient is the information for a single Zookeeper client and its session.
-// This is used to parse/extract the output fo the `cons` command.
-type ServerClient struct {
-	Queued        int64
-	Received      int64
-	Sent          int64
-	SessionID     SessionId
-	Lcxid         ZXID
-	Lzxid         ZXID
-	Timeout       int32
-	LastLatency   int32
-	MinLatency    int32
-	AvgLatency    int32
-	MaxLatency    int32
-	Established   time.Time
-	LastResponse  time.Time
-	Addr          string
-	LastOperation string // maybe?
-	Error         error
-}
-
-// ServerClients is a struct for the FLWCons() function. It's used to provide
-// the list of Clients.
-//
-// This is needed because FLWCons() takes multiple servers.
-type ServerClients struct {
-	Clients []*ServerClient
-	Error   error
-}
-
-// ServerStats is the information pulled from the Zookeeper `stat` command.
-type ServerStats struct {
-	Sent        int64
-	Received    int64
-	NodeCount   int64
-	MinLatency  int64
-	AvgLatency  int64
-	MaxLatency  int64
-	Connections int64
-	Outstanding int64
-	Epoch       int32
-	Counter     int32
-	BuildTime   time.Time
-	Mode        Mode
-	Version     string
-	Error       error
-}
-
 type RequestHeader struct {
 	Xid    Xid
 	OpCode OpCode
@@ -142,48 +77,17 @@ type ResponseHeader struct {
 	Err  ErrCode
 }
 
-type MultiHeader struct {
-	Type OpCode
-	Done bool
-	Err  ErrCode
-}
-
-type auth struct {
-	Type   int32
-	Scheme string
-	Auth   []byte
-}
-
-// Generic request structs
-
-type pathRequest struct {
-	Path Path
-}
-
-type PathVersionRequest struct {
+// Note: Apache ZooKeeper does not accept CheckVersion outside of a Multi Op,
+// see https://issues.apache.org/jira/browse/ZOOKEEPER-2623.
+type CheckVersionRequest struct {
 	Path    Path
 	Version Version
 }
 
-type pathWatchRequest struct {
-	Path  Path
-	Watch bool
-}
-
-type pathResponse struct {
-	Path Path
-}
-
-type statResponse struct {
-	Stat Stat
-}
-
-//
-
-type CheckVersionRequest PathVersionRequest
 type CheckVersionResponse struct{}
 
 type CloseRequest struct{}
+
 type CloseResponse struct{}
 
 type ConnectRequest struct {
@@ -208,63 +112,106 @@ type CreateRequest struct {
 	Mode CreateMode
 }
 
-type CreateResponse pathResponse
+type CreateResponse struct {
+	Path Path
+}
 
-type Create2Request CreateRequest
+type Create2Request struct {
+	Path Path
+	Data []byte
+	ACL  []ACL
+	Mode CreateMode
+}
 
 type Create2Response struct {
 	Path Path
 	Stat Stat
 }
 
-type DeleteRequest PathVersionRequest
-type DeleteResponse struct{}
-
-type errorResponse struct {
-	Err int32
+type DeleteRequest struct {
+	Path    Path
+	Version Version
 }
 
-type ExistsRequest pathWatchRequest
-type ExistsResponse statResponse
-type GetACLRequest pathRequest
+type DeleteResponse struct{}
+
+type ExistsRequest struct {
+	Path  Path
+	Watch bool
+}
+
+type ExistsResponse struct {
+	Stat Stat
+}
+
+type GetACLRequest struct {
+	Path Path
+}
 
 type GetACLResponse struct {
 	ACL  []ACL
 	Stat Stat
 }
 
-type GetChildrenRequest pathWatchRequest
+type GetChildrenRequest struct {
+	Path  Path
+	Watch bool
+}
 
 type GetChildrenResponse struct {
 	Children []Component
 }
 
-type GetChildren2Request pathWatchRequest
+type GetChildren2Request struct {
+	Path  Path
+	Watch bool
+}
 
 type GetChildren2Response struct {
 	Children []Component
 	Stat     Stat
 }
 
-type GetDataRequest pathWatchRequest
+type GetDataRequest struct {
+	Path  Path
+	Watch bool
+}
 
 type GetDataResponse struct {
 	Data []byte
 	Stat Stat
 }
 
-type getMaxChildrenRequest pathRequest
+// A MultiRequest is a sequence of (MultiHeader Op)* MultiHeader,
+// where Op is (CreateRequest|SetDataRequest|DeleteReqest|CheckVersionRequest)
+// and only the final MultiHeader has Done set to true.
 
-type getMaxChildrenResponse struct {
-	Max int32
+// A MultiResponse is a sequence of (MultiHeader Result)* MultiHeader,
+// where Result is (MultiErrorResponse|CreateResponse|SetDataResponse|
+// DeleteResponse|CheckVersionResponse)
+// and only the final MultiHeader has Done set to true.
+
+type MultiHeader struct {
+	Type OpCode
+	Done bool
+	Err  ErrCode
 }
 
-type getSaslRequest struct {
-	Token []byte
+type MultiErrorResponse struct {
+	Err ErrCode
 }
 
 type PingRequest struct{}
+
 type PingResponse struct{}
+
+type SASLRequest struct {
+	Token []byte
+}
+
+type SASLResponse struct {
+	Token []byte
+}
 
 type SetACLRequest struct {
 	Path    Path
@@ -272,7 +219,9 @@ type SetACLRequest struct {
 	Version Version
 }
 
-type SetACLResponse statResponse
+type SetACLResponse struct {
+	Stat Stat
+}
 
 type SetDataRequest struct {
 	Path    Path
@@ -280,19 +229,8 @@ type SetDataRequest struct {
 	Version Version
 }
 
-type SetDataResponse statResponse
-
-type setMaxChildren struct {
-	Path Path
-	Max  int32
-}
-
-type setSaslRequest struct {
-	Token string
-}
-
-type setSaslResponse struct {
-	Token string
+type SetDataResponse struct {
+	Stat Stat
 }
 
 type SetWatchesRequest struct {
@@ -304,24 +242,21 @@ type SetWatchesRequest struct {
 
 type SetWatchesResponse struct{}
 
-type SyncRequest pathRequest
-type SyncResponse pathResponse
-
-type SetAuthRequest auth
-type SetAuthResponse struct{}
-
-// A MultiRequest is a sequence of (MultiHeader Op)* MultiHeader,
-// where Op is (CreateRequest|SetDataRequest|DeleteReqest|CheckVersionRequest)
-// and only the final MultiHeader has Done set to true.
-
-// A MultiResponse is a sequence of (MultiHeader Result)* MultiHeader,
-// where Result is (MultiErrorResponse|CreateResponse|SetDataResponse|
-// DeleteResponse|CheckVersionResponse)
-// and only the final MultiHeader has Done set to true.
-
-type MultiErrorResponse struct {
-	Err ErrCode
+type SyncRequest struct {
+	Path Path
 }
+
+type SyncResponse struct {
+	Path Path
+}
+
+type SetAuthRequest struct {
+	Type   int32
+	Scheme string
+	Auth   []byte
+}
+
+type SetAuthResponse struct{}
 
 type WatcherEvent struct {
 	Type  EventType
@@ -331,6 +266,8 @@ type WatcherEvent struct {
 
 func RequestStructForOp(op OpCode) interface{} {
 	switch op {
+	case OpCheckVersion:
+		return &CheckVersionRequest{}
 	case OpClose:
 		return &CloseRequest{}
 	case OpCreate:
@@ -351,24 +288,26 @@ func RequestStructForOp(op OpCode) interface{} {
 		return &GetDataRequest{}
 	case OpPing:
 		return &PingRequest{}
+	case OpSASL:
+		return &SASLRequest{}
 	case OpSetACL:
 		return &SetACLRequest{}
+	case OpSetAuth:
+		return &SetAuthRequest{}
 	case OpSetData:
 		return &SetDataRequest{}
 	case OpSetWatches:
 		return &SetWatchesRequest{}
 	case OpSync:
 		return &SyncRequest{}
-	case OpSetAuth:
-		return &SetAuthRequest{}
-	case OpCheckVersion:
-		return &CheckVersionRequest{}
 	}
 	return nil
 }
 
 func ResponseStructForOp(op OpCode) interface{} {
 	switch op {
+	case OpCheckVersion:
+		return &CheckVersionResponse{}
 	case OpClose:
 		return &CloseResponse{}
 	case OpCreate:
@@ -389,6 +328,8 @@ func ResponseStructForOp(op OpCode) interface{} {
 		return &GetDataResponse{}
 	case OpPing:
 		return &PingResponse{}
+	case OpSASL:
+		return &SASLResponse{}
 	case OpSetACL:
 		return &SetACLResponse{}
 	case OpSetData:
@@ -399,8 +340,6 @@ func ResponseStructForOp(op OpCode) interface{} {
 		return &SyncResponse{}
 	case OpSetAuth:
 		return &SetAuthResponse{}
-	case OpCheckVersion:
-		return &CheckVersionResponse{}
 	}
 	return nil
 }
