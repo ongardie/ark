@@ -267,15 +267,33 @@ func (t *Test) TestZKCP_connect_badPassword() {
 		t.Errorf("Returned session ID for bad password is %v, expected 0",
 			resp2.SessionID)
 	}
-	/*
-		err = ping(conn1)
-		if err != nil {
-			// Apache ZooKeeper trunk fails this. TODO: file a bug.
-			t.Errorf("Expected ping to succeed on first connection, got: %v", err)
-		}
-	*/
+	err = ping(conn1)
+	if err != nil {
+		// Apache ZooKeeper trunk fails this: closes the connection. The Client can
+		// reopen, though.
+		t.Errorf("Expected ping to succeed on first connection, got: %v", err)
+	}
 	err = ping(conn2)
 	if err == nil {
 		t.Errorf("Expected ping to return error with bad password, got nil")
+	}
+
+	conn3, err := net.Dial("tcp", "localhost:2181")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = connect(conn3, &proto.ConnectRequest{
+		ProtocolVersion: 0,
+		LastZxidSeen:    0,
+		Timeout:         0,
+		SessionID:       resp1.SessionID,
+		Passwd:          resp1.Passwd,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ping(conn3)
+	if err != nil {
+		t.Errorf("Expected ping to succeed with good password, got: %v", err)
 	}
 }
