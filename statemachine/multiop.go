@@ -8,8 +8,8 @@ package statemachine
 import (
 	"log"
 
-	"salesforce.com/zoolater/jute"
-	"salesforce.com/zoolater/proto"
+	"salesforce.com/ark/jute"
+	"salesforce.com/ark/proto"
 )
 
 func applyMulti(ctx *context, tree *Tree, cmdBuf []byte) (*Tree, []byte, NotifyEvents, proto.ErrCode) {

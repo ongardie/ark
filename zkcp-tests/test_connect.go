@@ -8,9 +8,9 @@ package main
 import (
 	"net"
 
-	"salesforce.com/zoolater/intframe"
-	"salesforce.com/zoolater/jute"
-	"salesforce.com/zoolater/proto"
+	"salesforce.com/ark/intframe"
+	"salesforce.com/ark/jute"
+	"salesforce.com/ark/proto"
 )
 
 func connect(conn net.Conn, req *proto.ConnectRequest) (*proto.ConnectResponse, error) {
@@ -173,7 +173,7 @@ func (t *Test) TestZKCP_connect_barelyTolerable2() {
 }
 
 // This test shows that Apache ZooKeeper may deny connections based on
-// lastZxidSeen. It's skipped since zoolater ignores the field entirely.
+// lastZxidSeen. It's skipped since ark ignores the field entirely.
 func (t *Test) TestZKCP_connect_lastZxidTooHigh() {
 	t.SkipNow()
 	conn, err := net.Dial("tcp", "localhost:2181")

@@ -6,9 +6,9 @@
 package main
 
 import (
-	zk "salesforce.com/zoolater/client"
-	"salesforce.com/zoolater/jute"
-	"salesforce.com/zoolater/proto"
+	zk "salesforce.com/ark/client"
+	"salesforce.com/ark/jute"
+	"salesforce.com/ark/proto"
 )
 
 var multiEnd = proto.MultiHeader{

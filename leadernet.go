@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/raft"
-	zoosync "salesforce.com/zoolater/sync"
+	zoosync "salesforce.com/ark/sync"
 )
 
 type Conn interface {

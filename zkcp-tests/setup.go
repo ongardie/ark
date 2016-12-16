@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"salesforce.com/zoolater/client"
-	"salesforce.com/zoolater/proto"
+	"salesforce.com/ark/client"
+	"salesforce.com/ark/proto"
 )
 
 const ClockSkew = 60000

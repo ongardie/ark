@@ -16,9 +16,9 @@ import (
 	"os"
 	"time"
 
-	"salesforce.com/zoolater/jute"
-	"salesforce.com/zoolater/proto"
-	"salesforce.com/zoolater/statemachine"
+	"salesforce.com/ark/jute"
+	"salesforce.com/ark/proto"
+	"salesforce.com/ark/statemachine"
 
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"

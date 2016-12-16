@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"salesforce.com/zoolater/intframe"
-	"salesforce.com/zoolater/jute"
-	"salesforce.com/zoolater/proto"
+	"salesforce.com/ark/intframe"
+	"salesforce.com/ark/jute"
+	"salesforce.com/ark/proto"
 )
 
 type Client struct {

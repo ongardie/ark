@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"salesforce.com/zoolater/intframe"
+	"salesforce.com/ark/intframe"
 
 	"github.com/hashicorp/raft"
 )

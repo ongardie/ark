@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"testing"
 
-	"salesforce.com/zoolater/proto"
+	"salesforce.com/ark/proto"
 )
 
 var ctx *context = &context{

@@ -9,8 +9,8 @@ import (
 	"errors"
 	"fmt"
 
-	"salesforce.com/zoolater/jute"
-	"salesforce.com/zoolater/proto"
+	"salesforce.com/ark/jute"
+	"salesforce.com/ark/proto"
 )
 
 type MultiResponse struct {

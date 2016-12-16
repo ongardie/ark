@@ -14,7 +14,7 @@ import (
 
 	"github.com/hashicorp/raft"
 
-	"salesforce.com/zoolater/intframe"
+	"salesforce.com/ark/intframe"
 )
 
 type logAppender struct {

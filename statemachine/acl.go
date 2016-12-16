@@ -8,7 +8,7 @@ package statemachine
 import (
 	"net"
 
-	"salesforce.com/zoolater/proto"
+	"salesforce.com/ark/proto"
 )
 
 func ipMatches(ident proto.Identity, pattern proto.Identity) bool {

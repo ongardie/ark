@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"salesforce.com/zoolater/proto"
+	"salesforce.com/ark/proto"
 )
 
 type Tree struct {

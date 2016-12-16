@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"salesforce.com/zoolater/proto"
+	"salesforce.com/ark/proto"
 )
 
 func (t *Test) TestZKCP_Exists_watchPath() {

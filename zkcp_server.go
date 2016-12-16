@@ -12,11 +12,11 @@ import (
 	"net"
 	"sync"
 
-	"salesforce.com/zoolater/intframe"
-	"salesforce.com/zoolater/jute"
-	"salesforce.com/zoolater/proto"
-	"salesforce.com/zoolater/statemachine"
-	"salesforce.com/zoolater/x500"
+	"salesforce.com/ark/intframe"
+	"salesforce.com/ark/jute"
+	"salesforce.com/ark/proto"
+	"salesforce.com/ark/statemachine"
+	"salesforce.com/ark/x500"
 )
 
 type InfiniteQueue struct {

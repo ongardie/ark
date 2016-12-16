@@ -6,8 +6,8 @@
 package main
 
 import (
-	zk "salesforce.com/zoolater/client"
-	"salesforce.com/zoolater/proto"
+	zk "salesforce.com/ark/client"
+	"salesforce.com/ark/proto"
 )
 
 // Tests the behavior of czxid, ctime in the Stat struct.

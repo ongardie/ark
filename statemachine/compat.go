@@ -5,7 +5,7 @@
 
 package statemachine
 
-import "salesforce.com/zoolater/proto"
+import "salesforce.com/ark/proto"
 
 func (t *Tree) GetChildren(ctx *context, req *proto.GetChildrenRequest) (*proto.GetChildrenResponse, RegisterEvents, proto.ErrCode) {
 	req2 := &proto.GetChildren2Request{
