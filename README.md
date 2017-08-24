@@ -69,9 +69,11 @@ Since the ZooKeeper client protocol hasn't been precisely documented in the past
 
 ## Ark server implementation notes
 
-By using hashicorp-raft in a Replicated State Machine architecture, the Ark server has a clean separation between its state machine and consensus algorithm. It also supports dynamic membership changes.
+By using hashicorp-raft in a Replicated State Machine architecture, the Ark server has a clean separation between its state machine and consensus algorithm. It also supports dynamic membership changes. Presently, Ark servers use [boltdb](https://github.com/boltdb/bolt) for persisting the log to disk.
 
-Presently, Ark servers use [boltdb](https://github.com/boltdb/bolt) for persisting the log to disk.
+Here's an Ark-itecture diagram:
+![Ark-itecture](architecture.png)
+
 
 ### Request handler
 
