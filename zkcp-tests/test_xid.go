@@ -1,6 +1,8 @@
 /*
- * Copyright (c) 2016, salesforce.com, inc.
+ * Copyright (c) 2016, Salesforce.com, Inc.
  * All rights reserved.
+ * Licensed under the BSD 3-Clause license.
+ * For full license text, see LICENSE file or https://opensource.org/licenses/BSD-3-Clause
  */
 
 package main
@@ -100,7 +102,7 @@ func (t *Test) TestZKCP_connect_startingXid() {
 		t.Fatal(err)
 	}
 	if respHeader.Err != proto.ErrOk {
-		t.Error("header error: %v", respHeader.Err.Error())
+		t.Errorf("header error: %v", respHeader.Err.Error())
 	}
 }
 
@@ -182,9 +184,9 @@ func testZKCP_connext_xids(t *Test, xid1 proto.Xid, xid2 proto.Xid) {
 		t.Fatal(err)
 	}
 	if respHeader1.Err != proto.ErrOk {
-		t.Error("header 1 error: %v", respHeader1.Err.Error())
+		t.Errorf("header 1 error: %v", respHeader1.Err.Error())
 	}
 	if respHeader2.Err != proto.ErrOk {
-		t.Error("header 2 error: %v", respHeader2.Err.Error())
+		t.Errorf("header 2 error: %v", respHeader2.Err.Error())
 	}
 }

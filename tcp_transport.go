@@ -3,8 +3,10 @@ This file is copied from hashicorp/raft with minor modifications.
 hashicorp/raft is licensed uner the Mozilla Public License, version 2.0.
 
 The Salesforce modifications are:
-Copyright (c) 2016, salesforce.com, inc.
+Copyright (c) 2016, Salesforce.com, Inc.
 All rights reserved.
+Licensed under the BSD 3-Clause license.
+For full license text, see LICENSE file or https://opensource.org/licenses/BSD-3-Clause
 
 The purpose of this file is to export a raft.StreamLayer for use with
 demux_streams.go, so that multiple protocols can share a listening TCP port.

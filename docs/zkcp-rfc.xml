@@ -15,35 +15,29 @@
 <?rfc sortrefs="yes" ?>
 <?rfc compact="yes" ?>
 <?rfc subcompact="no" ?>
-<rfc category="info" docName="draft-zkcp-rfc" ipr="noDerivativesTrust200902">
+<?rfc private="yes" ?>
+<rfc category="info" docName="draft-zkcp-rfc" ipr="trust200902">
 
   <front>
     <title abbrev="ZooKeeper Client Protocol">ZooKeeper Client Protocol</title>
 
     <author fullname="Diego Ongaro" role="editor" surname="Ongaro">
       <organization>Salesforce</organization>
-      <address>
-        <postal>
-          <street>The Landmark @ One Market</street>
-          <street>Suite 300</street>
-          <city>San Francisco</city>
-          <region>CA</region>
-          <code>94105</code>
-          <country>USA</country>
-        </postal>
-        <email>dongaro@salesforce.com</email>
-      </address>
     </author>
 
     <date year="2016" month="October" />
 
     <area>General</area>
 
-    <!-- Later: Internet Engineering Task Force? -->
-    <workgroup>Salesforce Internal </workgroup>
-
     <abstract>
       <t>This document is a draft describing the protocol used between Apache ZooKeeper (TM) clients and servers to query and manipulate data stored in a ZooKeeper cluster.</t>
+
+      <t>
+       Copyright (c) 2016, Salesforce.com, Inc.
+       All rights reserved.
+       Licensed under the BSD 3-Clause license.
+       For full license text, see LICENSE file or <eref target="https://opensource.org/licenses/BSD-3-Clause" />.
+      </t>
     </abstract>
   </front>
 
