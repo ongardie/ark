@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"salesforce.com/ark/intframe"
+	"github.com/ongardie/ark/intframe"
 
 	"github.com/hashicorp/raft"
 )

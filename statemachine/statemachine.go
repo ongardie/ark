@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"salesforce.com/ark/jute"
-	"salesforce.com/ark/proto"
+	"github.com/ongardie/ark/jute"
+	"github.com/ongardie/ark/proto"
 
 	"github.com/hashicorp/raft"
 )

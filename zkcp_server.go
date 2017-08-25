@@ -14,11 +14,11 @@ import (
 	"net"
 	"sync"
 
-	"salesforce.com/ark/intframe"
-	"salesforce.com/ark/jute"
-	"salesforce.com/ark/proto"
-	"salesforce.com/ark/statemachine"
-	"salesforce.com/ark/x500"
+	"github.com/ongardie/ark/intframe"
+	"github.com/ongardie/ark/jute"
+	"github.com/ongardie/ark/proto"
+	"github.com/ongardie/ark/statemachine"
+	"github.com/ongardie/ark/x500"
 )
 
 type InfiniteQueue struct {

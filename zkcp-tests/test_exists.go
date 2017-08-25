@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"salesforce.com/ark/proto"
+	"github.com/ongardie/ark/proto"
 )
 
 func (t *Test) TestZKCP_Exists_watchPath() {

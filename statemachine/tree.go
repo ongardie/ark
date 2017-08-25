@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"salesforce.com/ark/proto"
+	"github.com/ongardie/ark/proto"
 )
 
 type Tree struct {

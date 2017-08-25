@@ -11,8 +11,8 @@ import (
 	"errors"
 	"fmt"
 
-	"salesforce.com/ark/jute"
-	"salesforce.com/ark/proto"
+	"github.com/ongardie/ark/jute"
+	"github.com/ongardie/ark/proto"
 )
 
 type MultiResponse struct {

@@ -15,9 +15,9 @@ import (
 	"strings"
 	"sync"
 
-	"salesforce.com/ark/intframe"
-	"salesforce.com/ark/jute"
-	"salesforce.com/ark/proto"
+	"github.com/ongardie/ark/intframe"
+	"github.com/ongardie/ark/jute"
+	"github.com/ongardie/ark/proto"
 )
 
 var listenAddr string

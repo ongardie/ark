@@ -10,9 +10,9 @@ package main
 import (
 	"net"
 
-	"salesforce.com/ark/intframe"
-	"salesforce.com/ark/jute"
-	"salesforce.com/ark/proto"
+	"github.com/ongardie/ark/intframe"
+	"github.com/ongardie/ark/jute"
+	"github.com/ongardie/ark/proto"
 )
 
 // This test shows that if you send a ping with a positive Xid to Apache

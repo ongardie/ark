@@ -11,7 +11,7 @@ import (
 	"reflect"
 	"testing"
 
-	"salesforce.com/ark/proto"
+	"github.com/ongardie/ark/proto"
 )
 
 var ctx *context = &context{

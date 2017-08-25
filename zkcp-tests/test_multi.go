@@ -8,9 +8,9 @@
 package main
 
 import (
-	zk "salesforce.com/ark/client"
-	"salesforce.com/ark/jute"
-	"salesforce.com/ark/proto"
+	zk "github.com/ongardie/ark/client"
+	"github.com/ongardie/ark/jute"
+	"github.com/ongardie/ark/proto"
 )
 
 var multiEnd = proto.MultiHeader{

@@ -10,8 +10,8 @@ package client
 import (
 	"fmt"
 
-	"salesforce.com/ark/jute"
-	"salesforce.com/ark/proto"
+	"github.com/ongardie/ark/jute"
+	"github.com/ongardie/ark/proto"
 )
 
 type Create2Response struct {

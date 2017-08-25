@@ -10,8 +10,8 @@ package statemachine
 import (
 	"log"
 
-	"salesforce.com/ark/jute"
-	"salesforce.com/ark/proto"
+	"github.com/ongardie/ark/jute"
+	"github.com/ongardie/ark/proto"
 )
 
 func applyMulti(ctx *context, tree *Tree, cmdBuf []byte) (*Tree, []byte, NotifyEvents, proto.ErrCode) {

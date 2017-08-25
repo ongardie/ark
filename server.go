@@ -18,9 +18,9 @@ import (
 	"os"
 	"time"
 
-	"salesforce.com/ark/jute"
-	"salesforce.com/ark/proto"
-	"salesforce.com/ark/statemachine"
+	"github.com/ongardie/ark/jute"
+	"github.com/ongardie/ark/proto"
+	"github.com/ongardie/ark/statemachine"
 
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"

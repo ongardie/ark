@@ -16,7 +16,7 @@ import (
 
 	"github.com/hashicorp/raft"
 
-	"salesforce.com/ark/intframe"
+	"github.com/ongardie/ark/intframe"
 )
 
 type logAppender struct {

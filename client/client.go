@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"salesforce.com/ark/intframe"
-	"salesforce.com/ark/jute"
-	"salesforce.com/ark/proto"
+	"github.com/ongardie/ark/intframe"
+	"github.com/ongardie/ark/jute"
+	"github.com/ongardie/ark/proto"
 )
 
 type Client struct {

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/raft"
-	zoosync "salesforce.com/ark/sync"
+	zoosync "github.com/ongardie/ark/sync"
 )
 
 type Conn interface {

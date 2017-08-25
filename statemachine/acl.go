@@ -10,7 +10,7 @@ package statemachine
 import (
 	"net"
 
-	"salesforce.com/ark/proto"
+	"github.com/ongardie/ark/proto"
 )
 
 func ipMatches(ident proto.Identity, pattern proto.Identity) bool {

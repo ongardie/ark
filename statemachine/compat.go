@@ -7,7 +7,7 @@
 
 package statemachine
 
-import "salesforce.com/ark/proto"
+import "github.com/ongardie/ark/proto"
 
 func (t *Tree) GetChildren(ctx *context, req *proto.GetChildrenRequest) (*proto.GetChildrenResponse, RegisterEvents, proto.ErrCode) {
 	req2 := &proto.GetChildren2Request{

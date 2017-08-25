@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"salesforce.com/ark/client"
-	"salesforce.com/ark/proto"
+	"github.com/ongardie/ark/client"
+	"github.com/ongardie/ark/proto"
 )
 
 const ClockSkew = 60000

@@ -8,8 +8,8 @@
 package main
 
 import (
-	zk "salesforce.com/ark/client"
-	"salesforce.com/ark/proto"
+	zk "github.com/ongardie/ark/client"
+	"github.com/ongardie/ark/proto"
 )
 
 // Tests the behavior of czxid, ctime in the Stat struct.
