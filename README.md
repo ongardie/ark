@@ -36,9 +36,9 @@ Note that Ark servers do not implement ZAB, so it is not possible to run a mixed
 
 Install the Go compiler (v1.7+) and set up your `$GOPATH`.
 
-    mkdir -p $GOPATH/src/salesforce.com/
-    git clone --recursive <git-URL-to-this-repo> $GOPATH/src/salesforce.com/ark
-    cd $GOPATH/src/salesforce.com/ark
+    mkdir -p $GOPATH/src/github.com/ongardie
+    git clone --recursive https://github.com/ongardie/ark.git $GOPATH/src/github.com/ongardie/ark
+    cd $GOPATH/src/github.com/ongardie/ark
     go get -x
     go build -x
 
